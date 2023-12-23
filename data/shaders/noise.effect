@@ -1,0 +1,264 @@
+uniform float4x4 ViewProj;
+uniform float2 uv_size;
+uniform float2 pixel_size;
+uniform float2 sub_scaling;
+uniform float2 sub_displace;
+uniform float time;
+uniform float sub_influence;
+uniform int layers;
+uniform int noise_type;
+uniform int noise_map_type;
+uniform bool invert;
+uniform float sub_rotation;
+uniform float contrast;
+uniform float brightness;
+
+
+sampler_state textureSampler{
+    Filter = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+    MinLOD = 0;
+    MaxLOD = 0;
+};
+
+float srgb_nonlinear_to_linear_channel(float u)
+{
+	return (u <= 0.04045) ? (u / 12.92) : pow((u + 0.055) / 1.055, 2.4);
+}
+
+float3 srgb_nonlinear_to_linear(float3 v)
+{
+	return float3(srgb_nonlinear_to_linear_channel(v.r), srgb_nonlinear_to_linear_channel(v.g), srgb_nonlinear_to_linear_channel(v.b));
+}
+
+float4 adjustments(float4 color, float b, float c)
+{
+	// Calculate Contrast Value
+	float ca = c < 0.0f ? 1.0f / (-c + 1.0f) : (c + 1.0f);
+
+	float3 col = float3(
+		ca * color.r + b,
+		ca * color.g + b,
+		ca * color.b + b
+	);
+	return float4(col, color.a);
+}
+
+uint3 pcg3d(uint3 v)
+{
+
+	v = v * 1664525u + 1013904223u;
+
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+
+	v ^= v >> 16u;
+
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+
+	return v;
+}
+
+
+// 3 outputs, 3 inputs
+float3 hash33(float3 src)
+{
+	src.xy = src.xy + 1500000.0;
+	uint3 u = uint3(src);
+	return float3(pcg3d(u)) * (1.0 / float(0xffffffffu));
+}
+
+float3 cubic_interp_3d(float3 a, float3 b, float3 c, float3 d, float x)
+{
+	float3 p = -0.5 * a + 1.5 * b - 1.5 * c + 0.5 * d;
+	float3 q = a - 2.5 * b + 2.0 * c - 0.5 * d;
+	float3 r = -0.5 * a + 0.5 * c;
+	
+	return p * x * x * x + q * x * x + r * x + b;
+}
+
+/*
+ *   3D value noise sampling function, using linear temporal
+ *   interpolation
+ */
+float3 value_noise_lt_3d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+	// Linear Interp temporal value
+	float3 c0 = hash33(float3(coord, step));
+	float3 c1 = hash33(float3(coord, step + 1.0f));
+	return lerp(c0, c1, float3(fraction, fraction, fraction));
+
+}
+
+/*
+ *   3D value noise sampling function, using cubic temporal
+ *   interpolation
+ */
+float3 value_noise_ct_3d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+
+	// Cubic Interpolated temporal value
+	float3 c0 = hash33(float3(coord, step - 1.0f));
+	float3 c1 = hash33(float3(coord, step));
+	float3 c2 = hash33(float3(coord, step + 1.0f));
+	float3 c3 = hash33(float3(coord, step + 2.0f));
+	return cubic_interp_3d(c0, c1, c2, c3, fraction);
+}
+
+
+float3 block_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = (uv + float2(100.0, 100.0)) * uv_size;
+	coord = float2(coord.x * cos(theta) - sin(theta) * coord.y, coord.x * sin(theta) + coord.y * cos(theta));
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+
+	float hash = hash33(float3(coord, scale.x)).x;
+	float pixel_time = time * (1.0f + hash);
+
+	return value_noise_ct_3d(coord, pixel_time);
+}
+
+float3 linear_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = (uv + float2(100.0, 100.0)) * uv_size;
+	coord = float2(coord.x * cos(theta) - sin(theta) * coord.y, coord.x * sin(theta) + coord.y * cos(theta));
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+	//coord -= 0.5;
+	float2 coord_base = floor(coord);
+	float2 coord_frac = frac(coord);
+	
+	float3 c_tl = value_noise_ct_3d(coord_base,                    time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_ct_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_ct_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_ct_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+
+	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
+}
+
+float3 smooth_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = (uv + float2(100.0, 100.0)) * uv_size;
+	coord = float2(coord.x * cos(theta) - sin(theta) * coord.y, coord.x * sin(theta) + coord.y * cos(theta));
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+	//coord -= 0.5;
+	float2 coord_base = floor(coord);
+	float2 coord_frac = frac(coord);
+	
+	float3 c_tl = value_noise_ct_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_ct_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_ct_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_ct_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+
+	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
+	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
+}
+
+float3 sample_noise(float2 uv, int i, float2 scale)
+{
+	if (noise_type == 0) {
+		return block_3d(uv, i, scale);
+	} else if (noise_type == 1) {
+		return linear_3d(uv, i, scale);
+	} else if (noise_type == 2) {
+		return smooth_3d(uv, i, scale);
+	}
+	return linear_3d(uv, i, scale);	
+}
+
+float3 map_basic(float3 c)
+{
+	return c;
+}
+
+float3 map_billow(float3 c)
+{
+	return abs((c - 0.5) * 2.0);
+}
+
+float3 map_ridged(float3 c)
+{
+	return 1.0 - map_billow(c);
+}
+
+float3 map_smooth(float3 c)
+{
+	c = map_billow(c);
+	return c * c;
+}
+
+float3 map_noise(float3 c)
+{
+	if (noise_map_type == 0) {
+		return map_basic(c);
+	} else if (noise_map_type == 1) {
+		return map_billow(c);
+	} else if (noise_map_type == 2) {
+		return map_ridged(c);
+	} else if (noise_map_type == 3) {
+		return map_smooth(c);
+	}
+	return map_basic(c);
+}
+
+struct VertData
+{
+	float4 pos : POSITION;
+	float2 uv : TEXCOORD0;
+};
+
+VertData mainTransform(VertData v_in)
+{
+	v_in.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	return v_in;
+}
+
+float4 mainImage(VertData v_in) : TARGET
+{
+	float3 output = float3(0.0, 0.0, 0.0);
+	float influence = 1.0;
+	float sum_influence = 0.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash33(float3(float(i), float(i), float(i))).x;
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float3 c = sample_noise(v_in.uv, i, scale);
+		c = map_noise(c);
+		output += c * influence;
+		sum_influence += influence;
+		influence *= sub_influence;
+	}
+	output = (!invert ? output : (1.0 - output)) / sum_influence;
+
+	return adjustments(float4(output, 1.0), brightness, contrast);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImage(v_in);
+	}
+}
