@@ -190,7 +190,7 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	filter->global_rotation = (float)obs_data_get_double(settings, "base_rotation") * M_PI / 180.0f;
 
 	double sum_influence = 0.0;
-	double std_scale = 0.0;
+	//double std_scale = 0.0;
 	double var = 0.0;
 	for (int i = 0; i < (int)filter->layers; i++) {
 		double influence = pow((double)filter->sub_influence, (double)i);
