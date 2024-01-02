@@ -546,6 +546,9 @@ static obs_properties_t *noise_source_properties(void *data)
 				 obs_module_text("Noise.Evolution"), OBS_GROUP_NORMAL,
 				 evolution_group);
 
+	obs_properties_add_text(props, "plugin_info", PLUGIN_INFO,
+				OBS_TEXT_INFO);
+
 	return props;
 }
 
