@@ -1,18 +1,26 @@
 uniform float4x4 ViewProj;
 uniform float2 uv_size;
+uniform float global_rotation;
 uniform float2 pixel_size;
 uniform float2 sub_scaling;
 uniform float2 sub_displace;
+uniform float sum_influence;
 uniform float time;
 uniform float sub_influence;
+uniform float std_scale;
 uniform int layers;
 uniform int noise_type;
-uniform int noise_map_type;
-uniform bool invert;
+
 uniform float sub_rotation;
 uniform float contrast;
 uniform float brightness;
 
+uniform bool billow;
+uniform bool ridged;
+uniform float power;
+
+uniform int dw_iterations;
+uniform float2 dw_strength;
 
 sampler_state textureSampler{
     Filter = Linear;
@@ -22,14 +30,15 @@ sampler_state textureSampler{
     MaxLOD = 0;
 };
 
-float srgb_nonlinear_to_linear_channel(float u)
-{
-	return (u <= 0.04045) ? (u / 12.92) : pow((u + 0.055) / 1.055, 2.4);
-}
 
-float3 srgb_nonlinear_to_linear(float3 v)
+float2 transform(float2 uv_in, float2 shift, float rot)
 {
-	return float3(srgb_nonlinear_to_linear_channel(v.r), srgb_nonlinear_to_linear_channel(v.g), srgb_nonlinear_to_linear_channel(v.b));
+	uv_in -= shift;
+	uv_in = uv_in * uv_size;
+	uv_in = float2(uv_in.x * cos(rot) - uv_in.y * sin(rot), uv_in.x * sin(rot) + uv_in.y * cos(rot));
+	uv_in = uv_in / uv_size;
+	uv_in += shift;
+	return uv_in;
 }
 
 float4 adjustments(float4 color, float b, float c)
@@ -42,9 +51,13 @@ float4 adjustments(float4 color, float b, float c)
 		ca * color.g + b,
 		ca * color.b + b
 	);
+	if (ridged) {
+		col = 1.0 - col;
+	}
 	return float4(col, color.a);
 }
 
+// pcg33
 uint3 pcg3d(uint3 v)
 {
 
@@ -63,13 +76,25 @@ uint3 pcg3d(uint3 v)
 	return v;
 }
 
+uint pcg(uint v)
+{
+	uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	return (word >> 22u) ^ word;
+}
+
 
 // 3 outputs, 3 inputs
 float3 hash33(float3 src)
 {
-	src.xy = src.xy + 1500000.0;
-	uint3 u = uint3(src);
+	uint3 u = uint3(src + 8000000.0f);
 	return float3(pcg3d(u)) * (1.0 / float(0xffffffffu));
+}
+
+// 1 input, 1 output
+float hash11(float src)
+{
+	return float(pcg(uint(src)) * 1.0 / float(0xffffffffu));
 }
 
 float3 cubic_interp_3d(float3 a, float3 b, float3 c, float3 d, float x)
@@ -93,7 +118,6 @@ float3 value_noise_lt_3d(float2 coord, float t)
 	float3 c0 = hash33(float3(coord, step));
 	float3 c1 = hash33(float3(coord, step + 1.0f));
 	return lerp(c0, c1, float3(fraction, fraction, fraction));
-
 }
 
 /*
@@ -117,34 +141,37 @@ float3 value_noise_ct_3d(float2 coord, float t)
 float3 block_3d(float2 uv, int i, float2 scale)
 {
 	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+
 	float2 displacement = float(i) * sub_displace;
-	float2 coord = (uv + float2(100.0, 100.0)) * uv_size;
-	coord = float2(coord.x * cos(theta) - sin(theta) * coord.y, coord.x * sin(theta) + coord.y * cos(theta));
+	float2 coord = (uv) * uv_size;
+	
 	coord += displacement;
 	coord *= 1.0 / (pixel_size * scale);
 
 	float hash = hash33(float3(coord, scale.x)).x;
 	float pixel_time = time * (1.0f + hash);
 
-	return value_noise_ct_3d(coord, pixel_time);
+	return value_noise_lt_3d(coord, pixel_time);
 }
 
 float3 linear_3d(float2 uv, int i, float2 scale)
 {
 	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	
 	float2 displacement = float(i) * sub_displace;
-	float2 coord = (uv + float2(100.0, 100.0)) * uv_size;
-	coord = float2(coord.x * cos(theta) - sin(theta) * coord.y, coord.x * sin(theta) + coord.y * cos(theta));
+	float2 coord = uv * uv_size;
 	coord += displacement;
 	coord *= 1.0 / (pixel_size * scale);
 	//coord -= 0.5;
 	float2 coord_base = floor(coord);
 	float2 coord_frac = frac(coord);
 	
-	float3 c_tl = value_noise_ct_3d(coord_base,                    time * (1.0f + hash33(float3(coord_base, scale.x)).x));
-	float3 c_tr = value_noise_ct_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
-	float3 c_bl = value_noise_ct_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
-	float3 c_br = value_noise_ct_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+	float3 c_tl = value_noise_lt_3d(coord_base,                    time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
 
 	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
 	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
@@ -154,19 +181,19 @@ float3 linear_3d(float2 uv, int i, float2 scale)
 float3 smooth_3d(float2 uv, int i, float2 scale)
 {
 	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	
 	float2 displacement = float(i) * sub_displace;
-	float2 coord = (uv + float2(100.0, 100.0)) * uv_size;
-	coord = float2(coord.x * cos(theta) - sin(theta) * coord.y, coord.x * sin(theta) + coord.y * cos(theta));
+	float2 coord = uv * uv_size;
 	coord += displacement;
 	coord *= 1.0 / (pixel_size * scale);
 	//coord -= 0.5;
 	float2 coord_base = floor(coord);
 	float2 coord_frac = frac(coord);
-	
-	float3 c_tl = value_noise_ct_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
-	float3 c_tr = value_noise_ct_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
-	float3 c_bl = value_noise_ct_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
-	float3 c_br = value_noise_ct_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+	float3 c_tl = value_noise_lt_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
 
 	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
 	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
@@ -188,37 +215,53 @@ float3 sample_noise(float2 uv, int i, float2 scale)
 
 float3 map_basic(float3 c)
 {
-	return c;
+	return pow(c, float3(power, power, power));
+	//return c;
 }
 
 float3 map_billow(float3 c)
 {
-	return abs((c - 0.5) * 2.0);
-}
-
-float3 map_ridged(float3 c)
-{
-	return 1.0 - map_billow(c);
-}
-
-float3 map_smooth(float3 c)
-{
-	c = map_billow(c);
-	return c * c;
+	return pow(abs((c - 0.5) * 2.0), float3(power, power, power));
 }
 
 float3 map_noise(float3 c)
 {
-	if (noise_map_type == 0) {
-		return map_basic(c);
-	} else if (noise_map_type == 1) {
-		return map_billow(c);
-	} else if (noise_map_type == 2) {
-		return map_ridged(c);
-	} else if (noise_map_type == 3) {
-		return map_smooth(c);
+	return billow ? map_billow(c) : map_basic(c);
+}
+
+float3 fractal_noise(float2 uv)
+{
+	float3 output = float3(0.0, 0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float3 c = sample_noise(uv, i, scale);
+		c = map_noise(c);
+		output += c * influence;
+		influence *= sub_influence;
 	}
-	return map_basic(c);
+	output = output / sum_influence;
+	return std_scale * (output - 0.5) + 0.5;
+}
+
+float3 fractal_noise_max(float2 uv)
+{
+	float3 output = float3(0.0, 0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float3 c = sample_noise(uv, i, scale);
+		c = map_noise(c) * influence;
+		output = max(output, c);
+		influence *= sub_influence;
+	}
+	return output;
 }
 
 struct VertData
@@ -233,32 +276,136 @@ VertData mainTransform(VertData v_in)
 	return v_in;
 }
 
-float4 mainImage(VertData v_in) : TARGET
+float4 mainImage3(VertData v_in) : TARGET
 {
-	float3 output = float3(0.0, 0.0, 0.0);
-	float influence = 1.0;
-	float sum_influence = 0.0;
-	for (int i = 0; i < layers; i++)
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 output = fractal_noise(uv);
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
 	{
-		float layer_offset = hash33(float3(float(i), float(i), float(i))).x;
-		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
-		
-		float3 c = sample_noise(v_in.uv, i, scale);
-		c = map_noise(c);
-		output += c * influence;
-		sum_influence += influence;
-		influence *= sub_influence;
+		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
 	}
-	output = (!invert ? output : (1.0 - output)) / sum_influence;
-
 	return adjustments(float4(output, 1.0), brightness, contrast);
 }
 
-technique Draw
+float4 mainImageMax3(VertData v_in) : TARGET
+{
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 output = fractal_noise_max(uv);
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		output = fractal_noise_max(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+	return adjustments(float4(output, 1.0), brightness, contrast);
+}
+
+float4 mainImage2(VertData v_in) : TARGET
+{
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 output = fractal_noise(uv);
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+	return adjustments(float4(output.xy, 0.0, 1.0), brightness, contrast);
+}
+
+float4 mainImageMax2(VertData v_in) : TARGET
+{
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 output = fractal_noise_max(uv);
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		output = fractal_noise_max(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+	return adjustments(float4(output.xy, 0.0, 1.0), brightness, contrast);
+}
+
+
+float4 mainImage1(VertData v_in) : TARGET
+{
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 output = fractal_noise(uv);
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++) {
+		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+	return adjustments(float4(output.x, output.x, output.x, 1.0), brightness, contrast);
+}
+
+
+float4 mainImageMax1(VertData v_in) : TARGET
+{
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 output = fractal_noise_max(uv);
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		output = fractal_noise_max(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+	return adjustments(float4(output.x, output.x, output.x, 1.0), brightness, contrast);
+}
+
+
+technique Draw3
 {
 	pass
 	{
 		vertex_shader = mainTransform(v_in);
-		pixel_shader = mainImage(v_in);
+		pixel_shader = mainImage3(v_in);
+	}
+}
+
+technique Draw2
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImage2(v_in);
+	}
+}
+
+technique Draw1
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImage1(v_in);
+	}
+}
+
+technique Draw1Max
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImageMax1(v_in);
+	}
+}
+
+technique Draw2Max
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImageMax2(v_in);
+	}
+}
+
+technique Draw3Max
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImageMax3(v_in);
 	}
 }
