@@ -81,7 +81,7 @@ static void noise_create(noise_data_t *filter)
 {
 	filter->input_texrender =
 		create_or_reset_texrender(filter->input_texrender);
-	filter->input_texrender =
+	filter->output_texrender =
 		create_or_reset_texrender(filter->output_texrender);
 
 	
@@ -105,10 +105,13 @@ static void noise_source_destroy(void *data)
 
 	obs_enter_graphics();
 
-	// EXAMPLE OF DESTROYING EFFECTS AND TEXRENDER
-	//if (filter->effect_stroke) {
-	//	gs_effect_destroy(filter->effect_stroke);
-	//}
+	if (filter->noise_effect) {
+		gs_effect_destroy(filter->noise_effect);
+	}
+
+	if (filter->output_effect) {
+		gs_effect_destroy(filter->output_effect);
+	}
 
 	if (filter->input_texrender) {
 		gs_texrender_destroy(filter->input_texrender);
@@ -140,7 +143,7 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	// data structure pointers/values/etc..
 	noise_data_t *filter = data;
 
-	filter->time = (float)obs_data_get_double(settings,"time");
+	filter->time = (float)obs_data_get_double(settings, "time");
 	if (!filter->is_filter) {
 		filter->width =
 			(uint32_t)obs_data_get_int(settings, "source_width");
@@ -150,8 +153,10 @@ static void noise_source_update(void *data, obs_data_t *settings)
 
 	filter->uv_size.x = (float)filter->width;
 	filter->uv_size.y = (float)filter->height;
-	filter->pixel_size.x = (float)obs_data_get_double(settings, "pixel_width");
-	filter->pixel_size.y = (float)obs_data_get_double(settings, "pixel_height");
+	filter->pixel_size.x =
+		(float)obs_data_get_double(settings, "pixel_width");
+	filter->pixel_size.y =
+		(float)obs_data_get_double(settings, "pixel_height");
 	filter->layers = (uint32_t)obs_data_get_int(settings, "layers");
 	filter->speed = (float)obs_data_get_double(settings, "speed") / 100.0f;
 	filter->sub_influence =
@@ -171,10 +176,37 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	filter->sub_rotation =
 		(float)(obs_data_get_double(settings, "sub_rotation") * M_PI /
 			180.0);
-	filter->displace_scale.x = (float)obs_data_get_double(settings, "filter_displace_scale_x");
-	filter->displace_scale.y = (float)obs_data_get_double(settings, "filter_displace_scale_y");
+	filter->displace_scale.x =
+		(float)obs_data_get_double(settings, "filter_displace_scale_x");
+	filter->displace_scale.y =
+		(float)obs_data_get_double(settings, "filter_displace_scale_y");
 	filter->brightness = (float)obs_data_get_double(settings, "brightness");
 	filter->contrast = (float)obs_data_get_double(settings, "contrast");
+	filter->channels =
+		(uint32_t)obs_data_get_int(settings, "noise_channels");
+	filter->billow = obs_data_get_bool(settings, "billow");
+	filter->ridged = obs_data_get_bool(settings, "ridged");
+	filter->power = (float)obs_data_get_double(settings, "power");
+	filter->global_rotation = (float)obs_data_get_double(settings, "base_rotation") * M_PI / 180.0f;
+
+	double sum_influence = 0.0;
+	//double std_scale = 0.0;
+	double var = 0.0;
+	for (int i = 0; i < (int)filter->layers; i++) {
+		double influence = pow((double)filter->sub_influence, (double)i);
+		double var_factor = influence * influence;
+		var += var_factor;
+		sum_influence += influence;
+	}
+	double std = sqrt(var);
+	filter->sum_influence = (float)sum_influence;
+	filter->std_scale = (1.0f-0.05f*((float)filter->layers-1.0f))*(float)(sum_influence/std);
+	filter->comb_max =
+		(uint32_t)obs_data_get_int(settings, "layer_combo_type") ==
+		NOISE_LAYER_MAX;
+	filter->dw_iterations = (int)obs_data_get_int(settings, "dw_iterations");
+	filter->dw_strength.x = (float)obs_data_get_double(settings, "dw_strength_x");
+	filter->dw_strength.y = (float)obs_data_get_double(settings, "dw_strength_y");
 }
 
 static void noise_displace_filter_video_render(void *data, gs_effect_t *effect)
@@ -333,21 +365,45 @@ static obs_properties_t *noise_source_properties(void *data)
 
 	obs_properties_t *props = obs_properties_create();
 	obs_properties_set_param(props, filter, NULL);
-
+	obs_property_t *p = NULL;
 	if (!filter->is_filter) {
-		obs_properties_add_int(props, "source_width", "Width", 0, 8000,
-				       1);
-		obs_properties_add_int(props, "source_height", "Height", 0,
-				       8000, 1);
-	} else {
-		obs_properties_add_float_slider(props, "filter_displace_scale_x",
-					 "Displace Scale X", 0.0, 400.0, 0.1);
-		obs_properties_add_float_slider(props, "filter_displace_scale_y",
-					 "Displace Scale Y", 0.0, 400.0, 0.1);
-	}
+		obs_properties_t *source_dimensions = obs_properties_create();
 
+		p = obs_properties_add_int(source_dimensions, "source_width",
+				       obs_module_text("Noise.Width"), 0, 8000,
+				       1);
+		obs_property_int_set_suffix(p, "px");
+		p = obs_properties_add_int(source_dimensions, "source_height",
+				       obs_module_text("Noise.Height"), 0,
+				       8000, 1);
+		obs_property_int_set_suffix(p, "px");
+		obs_properties_add_group(
+			props, "source_dimensions",
+			obs_module_text("Noise.SourceProperties"),
+			OBS_GROUP_NORMAL, source_dimensions);
+	} else {
+		obs_properties_t *displacement_group = obs_properties_create();
+
+		p = obs_properties_add_float_slider(displacement_group,
+						"filter_displace_scale_x",
+						obs_module_text("Noise.Displacement.ScaleX"), 0.0, 400.0,
+						0.1);
+		obs_property_float_set_suffix(p, "px");
+		p = obs_properties_add_float_slider(displacement_group,
+						"filter_displace_scale_y",
+						obs_module_text("Noise.Displacement.ScaleY"), 0.0,
+						400.0, 0.1);
+		obs_property_float_set_suffix(p, "px");
+
+		obs_properties_add_group(
+			props, "displacement_group",
+			obs_module_text("Noise.Displacement"),
+					 OBS_GROUP_NORMAL, displacement_group);
+	}
+	obs_properties_t *general_noise_group = obs_properties_create();
 	obs_property_t *noise_type_list = obs_properties_add_list(
-		props, "noise_type", obs_module_text("Noise.Type"),
+		general_noise_group, "noise_type",
+		obs_module_text("Noise.Type"),
 		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(noise_type_list,
 				  obs_module_text(NOISE_TYPE_BLOCK_LABEL),
@@ -359,59 +415,140 @@ static obs_properties_t *noise_source_properties(void *data)
 				  obs_module_text(NOISE_TYPE_SMOOTHSTEP_LABEL),
 				  NOISE_TYPE_SMOOTHSTEP);
 
+	if (!filter->is_filter) {
+		obs_property_t *noise_channels_list = obs_properties_add_list(
+			general_noise_group, "noise_channels",
+			obs_module_text("Noise.Channels"), OBS_COMBO_TYPE_LIST,
+			OBS_COMBO_FORMAT_INT);
 
-	obs_property_t *noise_map_type_list = obs_properties_add_list(
-		props, "noise_map_type", obs_module_text("Noise.MapType"),
-		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(noise_map_type_list,
-				  obs_module_text(NOISE_MAP_TYPE_BASIC_LABEL),
-				  NOISE_MAP_TYPE_BASIC);
-	obs_property_list_add_int(noise_map_type_list,
-				  obs_module_text(NOISE_MAP_TYPE_BILLOW_LABEL),
-				  NOISE_MAP_TYPE_BILLOW);
-	obs_property_list_add_int(noise_map_type_list,
-				  obs_module_text(NOISE_MAP_TYPE_RIDGED_LABEL),
-				  NOISE_MAP_TYPE_RIDGED);
-	obs_property_list_add_int(noise_map_type_list,
-				  obs_module_text(NOISE_MAP_TYPE_SMOOTH_LABEL),
-				  NOISE_MAP_TYPE_SMOOTH);
+		obs_property_list_add_int(
+			noise_channels_list,
+			obs_module_text(NOISE_CHANNELS_1_LABEL),
+			NOISE_CHANNELS_1);
+		obs_property_list_add_int(
+			noise_channels_list,
+			obs_module_text(NOISE_CHANNELS_2_LABEL),
+			NOISE_CHANNELS_2);
+		obs_property_list_add_int(
+			noise_channels_list,
+			obs_module_text(NOISE_CHANNELS_3_LABEL),
+			NOISE_CHANNELS_3);
+	}
 
-	obs_properties_add_bool(props, "invert", obs_module_text("Noise.Invert"));
-
-	obs_properties_add_float_slider(props, "brightness",
+	obs_properties_add_bool(general_noise_group, "billow",
+				obs_module_text("Noise.Billow"));
+	obs_properties_add_bool(general_noise_group, "ridged",
+				obs_module_text("Noise.Ridged"));
+	obs_properties_add_float_slider(general_noise_group, "brightness",
 					obs_module_text("Noise.Brightness"),
 					-1.0, 1.0, 0.01);
 
-	obs_properties_add_float_slider(props, "contrast",
-					obs_module_text("Noise.Contrast"),
-					-1.0, 1.0, 0.01);
+	obs_properties_add_float_slider(general_noise_group, "contrast",
+					obs_module_text("Noise.Contrast"), -1.0,
+					1.0, 0.01);
+	obs_properties_add_group(props, "general_noise_group",
+				 obs_module_text("Noise.GeneralProperties"),
+				 OBS_GROUP_NORMAL, general_noise_group);
+
+
+	obs_properties_t *transform_group = obs_properties_create();
+
+	p = obs_properties_add_float_slider(
+		transform_group, "base_rotation",
+		obs_module_text("Noise.Transform.BaseRotation"), -360.0, 360.0, 0.1);
+	obs_property_float_set_suffix(p, "deg");
+	p = obs_properties_add_float_slider(transform_group, "pixel_width",
+					obs_module_text("Noise.Transform.BasePixelWidth"),
+					1.0, 1920.0, 1.0);
+	obs_property_float_set_suffix(p, "px");
+	p = obs_properties_add_float_slider(transform_group, "pixel_height",
+					obs_module_text("Noise.Transform.BasePixelHeight"),
+					1.0, 1080.0, 1.0);
+	obs_property_float_set_suffix(p, "px");
+
+	obs_properties_add_group(props, "transform_group",
+				 obs_module_text("Noise.Transform"),
+				 OBS_GROUP_NORMAL, transform_group);
+
+	obs_properties_t *complexity_group = obs_properties_create();
+	obs_properties_add_int_slider(complexity_group, "layers", obs_module_text("Noise.Complexity.Layers"), 1,
+				      9, 1);
+
+	obs_property_t *layer_combination_type = obs_properties_add_list(
+		complexity_group, "layer_combo_type",
+		obs_module_text("Noise.LayerComb"), OBS_COMBO_TYPE_LIST,
+		OBS_COMBO_FORMAT_INT);
+
+	obs_property_list_add_int(layer_combination_type,
+				  obs_module_text(NOISE_LAYER_WEIGHTED_AVERAGE_LABEL),
+				  NOISE_LAYER_WEIGHTED_AVERAGE);
+	obs_property_list_add_int(layer_combination_type,
+				  obs_module_text(NOISE_LAYER_MAX_LABEL),
+				  NOISE_LAYER_MAX);
 
 	obs_properties_add_float_slider(
-		props, "speed", "Speed", 0.0f, 500.0f, 0.1f);
+		complexity_group, "power", obs_module_text("Noise.Exponent"), 0.0, 3.0, 0.1);
 
-	obs_properties_add_int_slider(props, "layers", "Layers", 1, 9, 1);
 
-	obs_properties_add_float_slider(props, "pixel_width", "Pixel Width",
-					1.0, 1920.0, 1.0);
-	obs_properties_add_float_slider(props, "pixel_height", "Pixel Height",
-					1.0, 1080.0, 1.0);
-	obs_properties_add_float_slider(props, "sub_scale_x",
+	obs_properties_add_group(props, "complexity_group",
+				 obs_module_text("Noise.Complexity"),
+				 OBS_GROUP_NORMAL, complexity_group);
+
+	obs_properties_t *subscale_group = obs_properties_create();
+
+	obs_properties_add_float_slider(subscale_group, "sub_scale_x",
 					obs_module_text("Noise.Sub.Scale.X"),
 					1.0, 200.0, 0.1);
-	obs_properties_add_float_slider(props, "sub_scale_y",
+	obs_properties_add_float_slider(subscale_group, "sub_scale_y",
 					obs_module_text("Noise.Sub.Scale.Y"),
 					1.0, 200.0, 0.1);
-	obs_properties_add_float_slider(props, "sub_influence", "Sub Influence",
-					0.0, 2.0, 0.01);
-	obs_properties_add_float_slider(props, "sub_rotation",
+	obs_properties_add_float_slider(subscale_group, "sub_influence",
+					obs_module_text("Nose.Sub.Influence"), 0.0, 2.0, 0.01);
+	obs_properties_add_float_slider(subscale_group, "sub_rotation",
 					obs_module_text("Noise.Sub.Rotation"),
 					-360.0, 360.0, 0.1);
-	obs_properties_add_float_slider(props, "sub_displace_x",
+	obs_properties_add_float_slider(subscale_group, "sub_displace_x",
 					obs_module_text("Noise.Sub.Displace.X"),
 					0.0, 4000.0, 1.0);
-	obs_properties_add_float_slider(props, "sub_displace_y",
+	obs_properties_add_float_slider(subscale_group, "sub_displace_y",
 					obs_module_text("Noise.Sub.Displace.Y"),
 					0.0, 4000.0, 1.0);
+
+	obs_properties_add_group(props, "subscale_group",
+				 obs_module_text("Noise.Sub"),
+				 OBS_GROUP_NORMAL, subscale_group);
+
+	obs_properties_t *domain_warping_group = obs_properties_create();
+
+	obs_properties_add_int_slider(
+		domain_warping_group, "dw_iterations",
+		obs_module_text("Noise.DomainWarping.Iterations"), 0, 6, 1);
+
+	obs_properties_add_float_slider(domain_warping_group, "dw_strength_x",
+					obs_module_text("Noise.DomainWarping.StrengthX"),
+					0.0, 250.0, 1.0);
+
+	obs_properties_add_float_slider(domain_warping_group, "dw_strength_y",
+					obs_module_text("Noise.DomainWarping.StrengthY"), 0.0, 250.0,
+					1.0);
+
+	obs_properties_add_group(props, "domain_warping_group",
+				 obs_module_text("Noise.DomainWarping"),
+				 OBS_GROUP_NORMAL, domain_warping_group);
+
+
+	obs_properties_t *evolution_group = obs_properties_create();
+
+	obs_properties_add_float_slider(evolution_group, "speed", "Speed", 0.0f,
+					500.0f,
+					0.1f);
+	obs_properties_add_group(props, "evolution_group",
+				 obs_module_text("Noise.Evolution"), OBS_GROUP_NORMAL,
+				 evolution_group);
+
+	obs_properties_add_text(props, "plugin_info", PLUGIN_INFO,
+				OBS_TEXT_INFO);
+
 	return props;
 }
 
@@ -434,9 +571,12 @@ static void noise_source_video_tick(void *data, float seconds)
 
 static void noise_source_defaults(obs_data_t *settings)
 {
-	obs_data_set_default_int(settings, "layers", 1);
+	obs_data_set_default_int(settings, "layers", 4);
 	obs_data_set_default_int(settings, "source_width", 1920);
 	obs_data_set_default_int(settings, "source_height", 1080);
+	obs_data_set_default_bool(settings, "billow", false);
+	obs_data_set_default_bool(settings, "ridged", false);
+	obs_data_set_default_double(settings, "power", 1.0);
 	obs_data_set_default_double(settings, "sub_influence", 0.7);
 	obs_data_set_default_double(settings, "speed", 100.0);
 	obs_data_set_default_bool(settings, "invert", false);
@@ -444,6 +584,12 @@ static void noise_source_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "sub_scale_y", 50.0);
 	obs_data_set_default_double(settings, "brightness", 0.0);
 	obs_data_set_default_double(settings, "contrast", 0.0);
+	obs_data_set_default_double(settings, "pixel_width", 64.0);
+	obs_data_set_default_double(settings, "pixel_height", 64.0);
+	obs_data_set_default_int(settings, "noise_channels", 1);
+	obs_data_set_default_int(settings, "noise_type", NOISE_TYPE_SMOOTHSTEP);
+	obs_data_set_default_int(settings, "layer_combo_type",
+				 NOISE_LAYER_WEIGHTED_AVERAGE);
 }
 
 static void draw_output(noise_data_t *filter)
@@ -534,18 +680,60 @@ static void render_noise(noise_data_t *filter)
 				    filter->contrast);
 	}
 
+	if (filter->param_billow) {
+		gs_effect_set_bool(filter->param_billow, filter->billow);
+	}
+
+	if (filter->param_ridged) {
+		gs_effect_set_bool(filter->param_ridged, filter->ridged);
+	}
+
+	if (filter->param_power) {
+		gs_effect_set_float(filter->param_power, filter->power);
+	}
+
+	if (filter->param_sum_influence) {
+		gs_effect_set_float(filter->param_sum_influence, filter->sum_influence);
+	}
+
+	if (filter->param_std_scale) {
+		gs_effect_set_float(filter->param_std_scale, filter->std_scale);
+	}
+
+	if (filter->param_dw_iterations) {
+		gs_effect_set_int(filter->param_dw_iterations, filter->dw_iterations);
+	}
+
+	if (filter->param_dw_strength) {
+		gs_effect_set_vec2(filter->param_dw_strength, &filter->dw_strength);
+	}
+
+	if (filter->param_global_rotation) {
+		gs_effect_set_float(filter->param_global_rotation,
+				    filter->global_rotation);
+	}
+
 	set_blending_parameters();
 	uint32_t width = filter->width;
 	uint32_t height = filter->height;
+	//const char *technique = filter->channels == 1 ? "Draw1"
+	//			: filter->channels == 2 ? "Draw2"
+	//						: "Draw3";
+	struct dstr technique;
+	dstr_init_copy(&technique, "Draw");
+	dstr_catf(&technique, "%i", filter->channels);
+	if (filter->comb_max) {
+		dstr_cat(&technique, "Max");
+	}
 	if (gs_texrender_begin(filter->output_texrender, width,
 			       height)) {
 		gs_ortho(0.0f, (float)width, 0.0f, (float)height,
 			 -100.0f, 100.0f);
-		while (gs_effect_loop(effect, "Draw"))
+		while (gs_effect_loop(effect, technique.array))
 			gs_draw_sprite(texture, 0, width, height);
 		gs_texrender_end(filter->output_texrender);
 	}
-
+	dstr_free(&technique);
 	gs_blend_state_pop();
 }
 
@@ -633,6 +821,35 @@ static void render_noise_displace(noise_data_t *filter)
 		gs_effect_set_float(filter->param_contrast, filter->contrast);
 	}
 
+	if (filter->param_billow) {
+		gs_effect_set_bool(filter->param_billow, filter->billow);
+	}
+
+	if (filter->param_ridged) {
+		gs_effect_set_bool(filter->param_ridged, filter->ridged);
+	}
+
+	if (filter->param_power) {
+		gs_effect_set_float(filter->param_power, filter->power);
+	}
+
+	if (filter->param_sum_influence) {
+		gs_effect_set_bool(filter->param_sum_influence, filter->sum_influence);
+	}
+
+	if (filter->param_std_scale) {
+		gs_effect_set_float(filter->param_std_scale, filter->std_scale);
+	}
+
+	if (filter->param_dw_iterations) {
+		gs_effect_set_int(filter->param_dw_iterations, filter->dw_iterations);
+	}
+
+	if (filter->param_dw_strength) {
+		gs_effect_set_vec2(filter->param_dw_strength, &filter->dw_strength);
+	}
+
+
 	set_blending_parameters();
 	uint32_t width = filter->width;
 	uint32_t height = filter->height;
@@ -661,33 +878,49 @@ static void load_noise_effect(noise_data_t *filter)
 				filter->noise_effect, effect_index);
 			struct gs_effect_param_info info;
 			gs_effect_get_param_info(param, &info);
-				if (strcmp(info.name, "time") == 0) {
-					filter->time_param = param;
-				} else if (strcmp(info.name, "pixel_size") == 0) {
-					filter->pixel_size_param = param;
-				} else if (strcmp(info.name, "uv_size") == 0) {
-					filter->uv_size_param = param;
-				} else if (strcmp(info.name, "layers") == 0) {
-					filter->layers_param = param;
-				} else if (strcmp(info.name, "sub_influence") == 0) {
-					filter->sub_influence_param = param;
-				} else if (strcmp(info.name, "noise_type") == 0) {
-					filter->noise_type_param = param;
-				} else if (strcmp(info.name, "noise_map_type") == 0) {
-					filter->noise_map_type_param = param;
-				} else if (strcmp(info.name, "invert") == 0) {
-					filter->invert_param = param;
-				} else if (strcmp(info.name, "sub_scaling") == 0) {
-					filter->sub_scaling_param = param;
-				} else if (strcmp(info.name, "sub_displace") == 0) {
-					filter->sub_displace_param = param;
-				} else if (strcmp(info.name, "sub_rotation") == 0) {
-					filter->sub_rotation_param = param;
-				} else if (strcmp(info.name, "contrast") == 0) {
-					filter->param_contrast = param;
-				} else if (strcmp(info.name, "brightness") == 0) {
-					filter->param_brightness= param;
-				}
+			if (strcmp(info.name, "time") == 0) {
+				filter->time_param = param;
+			} else if (strcmp(info.name, "pixel_size") == 0) {
+				filter->pixel_size_param = param;
+			} else if (strcmp(info.name, "uv_size") == 0) {
+				filter->uv_size_param = param;
+			} else if (strcmp(info.name, "layers") == 0) {
+				filter->layers_param = param;
+			} else if (strcmp(info.name, "sub_influence") == 0) {
+				filter->sub_influence_param = param;
+			} else if (strcmp(info.name, "noise_type") == 0) {
+				filter->noise_type_param = param;
+			} else if (strcmp(info.name, "noise_map_type") == 0) {
+				filter->noise_map_type_param = param;
+			} else if (strcmp(info.name, "invert") == 0) {
+				filter->invert_param = param;
+			} else if (strcmp(info.name, "sub_scaling") == 0) {
+				filter->sub_scaling_param = param;
+			} else if (strcmp(info.name, "sub_displace") == 0) {
+				filter->sub_displace_param = param;
+			} else if (strcmp(info.name, "sub_rotation") == 0) {
+				filter->sub_rotation_param = param;
+			} else if (strcmp(info.name, "contrast") == 0) {
+				filter->param_contrast = param;
+			} else if (strcmp(info.name, "brightness") == 0) {
+				filter->param_brightness = param;
+			} else if (strcmp(info.name, "billow") == 0) {
+				filter->param_billow = param;
+			} else if (strcmp(info.name, "ridged") == 0) {
+				filter->param_ridged = param;
+			} else if (strcmp(info.name, "power") == 0) {
+				filter->param_power = param;
+			} else if (strcmp(info.name, "sum_influence") == 0) {
+				filter->param_sum_influence = param;
+			} else if (strcmp(info.name, "std_scale") == 0) {
+				filter->param_std_scale = param;
+			} else if (strcmp(info.name, "dw_iterations") == 0) {
+				filter->param_dw_iterations = param;
+			} else if (strcmp(info.name, "dw_strength") == 0) {
+				filter->param_dw_strength = param;
+			} else if (strcmp(info.name, "global_rotation") == 0) {
+				filter->param_global_rotation = param;
+			}
 		}
 	}
 }
@@ -736,6 +969,22 @@ static void load_noise_displace_effect(noise_data_t *filter)
 				filter->param_contrast = param;
 			} else if (strcmp(info.name, "brightness") == 0) {
 				filter->param_brightness = param;
+			} else if (strcmp(info.name, "billow") == 0) {
+				filter->param_billow = param;
+			} else if (strcmp(info.name, "ridged") == 0) {
+				filter->param_ridged = param;
+			} else if (strcmp(info.name, "power") == 0) {
+				filter->param_power = param;
+			} else if (strcmp(info.name, "sum_influence") == 0) {
+				filter->param_sum_influence = param;
+			} else if (strcmp(info.name, "std_scale") == 0) {
+				filter->param_std_scale = param;
+			} else if (strcmp(info.name, "dw_iterations") == 0) {
+				filter->param_dw_iterations = param;
+			} else if (strcmp(info.name, "dw_strength") == 0) {
+				filter->param_dw_strength = param;
+			} else if (strcmp(info.name, "global_rotation") == 0) {
+				filter->param_global_rotation = param;
 			}
 		}
 	}

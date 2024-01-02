@@ -75,7 +75,7 @@ gs_effect_t *load_shader_effect(gs_effect_t *effect,
 
 	if (effect == NULL) {
 		blog(LOG_WARNING,
-		     "[obs-composite-blur] Unable to load .effect file.  Errors:\n%s",
+		     "[obs-noise] Unable to load .effect file.  Errors:\n%s",
 		     (errors == NULL || strlen(errors) == 0 ? "(None)"
 							    : errors));
 		bfree(errors);
@@ -89,10 +89,9 @@ gs_effect_t *load_shader_effect(gs_effect_t *effect,
 // Performs loading of shader from file.  Properly includes #include directives.
 char *load_shader_from_file(const char *file_name)
 {
-	char *file_ptr = os_quick_read_utf8_file(file_name);
-	if (file_ptr == NULL)
+	char *file = os_quick_read_utf8_file(file_name);
+	if (file == NULL)
 		return NULL;
-	char *file = bstrdup(os_quick_read_utf8_file(file_name));
 	char **lines = strlist_split(file, '\n', true);
 	struct dstr shader_file;
 	dstr_init(&shader_file);
@@ -129,6 +128,7 @@ char *load_shader_from_file(const char *file_name)
 
 	bfree(file);
 	strlist_free(lines);
+
 	return shader_file.array;
 }
 

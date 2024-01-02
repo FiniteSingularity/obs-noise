@@ -10,18 +10,20 @@ uniform float time;
 uniform float sub_influence;
 uniform int layers;
 uniform int noise_type;
-uniform int noise_map_type;
+
 uniform bool invert;
 uniform float sub_rotation;
 uniform float brightness;
 uniform float contrast;
 
+uniform bool billow;
+uniform bool ridged;
+uniform float power;
+
 sampler_state textureSampler{
-    Filter =
-Linear;
+    Filter = Linear;
     AddressU = Clamp;
-    AddressV =
-Clamp;
+    AddressV = Clamp;
     MinLOD = 0;
     MaxLOD = 0;
 };
@@ -130,7 +132,7 @@ float3 block_3d(float2 uv, int i, float2 scale)
 	float hash = hash33(float3(coord, scale.x)).x;
 	float pixel_time = time * (1.0f + hash);
 
-	return value_noise_ct_3d(coord, pixel_time);
+	return value_noise_lt_3d(coord, pixel_time);
 }
 
 float3 linear_3d(float2 uv, int i, float2 scale)
@@ -145,10 +147,10 @@ float3 linear_3d(float2 uv, int i, float2 scale)
 	float2 coord_base = floor(coord);
 	float2 coord_frac = frac(coord);
 	
-	float3 c_tl = value_noise_ct_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
-	float3 c_tr = value_noise_ct_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
-	float3 c_bl = value_noise_ct_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
-	float3 c_br = value_noise_ct_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+	float3 c_tl = value_noise_lt_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
 
 	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
 	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
@@ -167,10 +169,10 @@ float3 smooth_3d(float2 uv, int i, float2 scale)
 	float2 coord_base = floor(coord);
 	float2 coord_frac = frac(coord);
 	
-	float3 c_tl = value_noise_ct_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
-	float3 c_tr = value_noise_ct_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
-	float3 c_bl = value_noise_ct_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
-	float3 c_br = value_noise_ct_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+	float3 c_tl = value_noise_lt_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
 
 	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
 	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
@@ -197,44 +199,22 @@ float3 sample_noise(float2 uv, int i, float2 scale)
 
 float3 map_basic(float3 c)
 {
-	return c;
+	return pow(c, float3(power, power, power));
+	//return c;
 }
 
 float3 map_billow(float3 c)
 {
-	return abs((c - 0.5) * 2.0);
-}
-
-float3 map_ridged(float3 c)
-{
-	return 1.0-map_billow(c);
-}
-
-float3 map_smooth(float3 c)
-{
-	c = map_billow(c);
-	return c * c;
+	return pow(abs((c - 0.5) * 2.0), float3(power, power, power));
 }
 
 float3 map_noise(float3 c)
 {
-	if (noise_map_type == 0)
+	if (billow)
 	{
-		return map_basic(c);
+		return ridged ? 1.0 - map_billow(c) : map_billow(c);
 	}
-	else if (noise_map_type == 1)
-	{
-		return map_billow(c);
-	}
-	else if (noise_map_type == 2)
-	{
-		return map_ridged(c);
-	}
-	else if (noise_map_type == 3)
-	{
-		return map_smooth(c);
-	}
-	return map_basic(c);
+	return ridged ? 1.0 - map_basic(c) : map_basic(c);
 }
 
 struct VertData
@@ -265,7 +245,7 @@ float4 mainImage(VertData v_in) : TARGET
 		sum_influence += influence;
 		influence *= sub_influence;
 	}
-	output = (!invert ? output : (1.0 - output)) / sum_influence;
+	output = output / sum_influence;
 	output.rgb = adjustments(float4(output, 1.0), brightness, contrast);
 	float2 offset = 2.0 * (output.rg - 0.5) * displace_scale;
 	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));

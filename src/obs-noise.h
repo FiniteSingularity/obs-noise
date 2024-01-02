@@ -13,6 +13,11 @@
 #define NOISE_TYPE_SMOOTHSTEP 2
 #define NOISE_TYPE_SMOOTHSTEP_LABEL "Noise.Type.Smoothstep"
 
+#define NOISE_LAYER_WEIGHTED_AVERAGE_LABEL "Noise.LayerComb.WeightedAverage"
+#define NOISE_LAYER_WEIGHTED_AVERAGE 1
+#define NOISE_LAYER_MAX_LABEL "Noise.LayerComb.Max"
+#define NOISE_LAYER_MAX 2
+
 #define NOISE_MAP_TYPE_BASIC 0
 #define NOISE_MAP_TYPE_BASIC_LABEL "Noise.MapType.Basic"
 #define NOISE_MAP_TYPE_BILLOW 1
@@ -21,6 +26,13 @@
 #define NOISE_MAP_TYPE_RIDGED_LABEL "Noise.MapType.Ridged"
 #define NOISE_MAP_TYPE_SMOOTH 3
 #define NOISE_MAP_TYPE_SMOOTH_LABEL "Noise.MapType.Smooth"
+
+#define NOISE_CHANNELS_3 3
+#define NOISE_CHANNELS_3_LABEL "Noise.Channels.Three"
+#define NOISE_CHANNELS_2 2
+#define NOISE_CHANNELS_2_LABEL "Noise.Channels.Two"
+#define NOISE_CHANNELS_1 1
+#define NOISE_CHANNELS_1_LABEL "Noise.Channels.One"
 
 struct noise_data;
 typedef struct noise_data noise_data_t;
@@ -41,6 +53,8 @@ struct noise_data {
 	bool rendering;
 	bool is_filter;
 
+	uint32_t channels;
+
 	struct vec2 displace_scale;
 	float time;
 	float speed;
@@ -50,10 +64,19 @@ struct noise_data {
 	float sub_rotation;
 	float brightness;
 	float contrast;
+	float power;
+	float sum_influence;
+	float std_scale;
+	float global_rotation;
+	bool billow;
+	bool ridged;
+	bool comb_max;
 
 	uint32_t num_channels;
 	uint32_t noise_type;
 	uint32_t noise_map_type;
+	int dw_iterations;
+	struct vec2 dw_strength;
 	bool invert;
 
 	uint32_t layers;
@@ -73,6 +96,15 @@ struct noise_data {
 	gs_eparam_t *param_image;
 	gs_eparam_t *param_contrast;
 	gs_eparam_t *param_brightness;
+	gs_eparam_t *param_billow;
+	gs_eparam_t *param_power;
+	gs_eparam_t *param_ridged;
+	gs_eparam_t *param_sum_influence;
+	gs_eparam_t *param_std_scale;
+
+	gs_eparam_t *param_dw_iterations;
+	gs_eparam_t *param_dw_strength;
+	gs_eparam_t *param_global_rotation;
 
 	gs_eparam_t *param_output_image;
 
