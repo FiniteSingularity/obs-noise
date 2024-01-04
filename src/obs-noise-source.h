@@ -29,3 +29,8 @@ static void render_noise_displace(noise_data_t *filter);
 static void load_noise_effect(noise_data_t *filter);
 static void load_noise_displace_effect(noise_data_t *filter);
 static void load_output_effect(noise_data_t *filter);
+
+static bool setting_preset_selected(void *data, obs_properties_t *props,
+				    obs_property_t *p, obs_data_t *settings);
+static bool setting_channels_modified(obs_properties_t *props,
+				      obs_property_t *p, obs_data_t *settings);

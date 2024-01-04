@@ -6,6 +6,11 @@
 	"<a href=\"https://github.com/finitesingularity/obs-noise/\">Noise</a> (" PROJECT_VERSION \
 	") by <a href=\"https://twitch.tv/finitesingularity\">FiniteSingularity</a>"
 
+// Default glow color: white in ABGR
+#define DEFAULT_MAP_COLOR_1 0xFF000000
+// Default shadow color: dark gray in ABGR
+#define DEFAULT_MAP_COLOR_2 0xFFFFFFFF
+
 #define NOISE_TYPE_BLOCK 0
 #define NOISE_TYPE_BLOCK_LABEL "Noise.Type.Block"
 #define NOISE_TYPE_LINEAR 1
@@ -33,6 +38,8 @@
 #define NOISE_CHANNELS_2_LABEL "Noise.Channels.Two"
 #define NOISE_CHANNELS_1 1
 #define NOISE_CHANNELS_1_LABEL "Noise.Channels.One"
+#define NOISE_CHANNELS_COLOR_MAP 0
+#define NOISE_CHANNELS_COLOR_MAP_LABEL "Noise.Channels.ColorMap"
 
 struct noise_data;
 typedef struct noise_data noise_data_t;
@@ -46,6 +53,8 @@ struct noise_data {
 	bool output_rendered;
 	gs_texrender_t *output_texrender;
 
+	obs_data_t *global_preset_data;
+
 	gs_effect_t *noise_effect;
 	gs_effect_t *output_effect;
 
@@ -54,6 +63,9 @@ struct noise_data {
 	bool is_filter;
 
 	uint32_t channels;
+
+	struct vec4 map_color_1;
+	struct vec4 map_color_2;
 
 	struct vec2 displace_scale;
 	float time;
@@ -107,6 +119,9 @@ struct noise_data {
 	gs_eparam_t *param_global_rotation;
 
 	gs_eparam_t *param_output_image;
+
+	gs_eparam_t *param_color_1;
+	gs_eparam_t *param_color_2;
 
 	float clock_time;
 
