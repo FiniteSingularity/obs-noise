@@ -83,8 +83,13 @@ static void noise_create(noise_data_t *filter)
 		create_or_reset_texrender(filter->input_texrender);
 	filter->output_texrender =
 		create_or_reset_texrender(filter->output_texrender);
-
 	
+	struct dstr filepath = {0};
+	dstr_cat(&filepath, obs_get_module_data_path(obs_current_module()));
+	dstr_cat(&filepath, "/presets/global_presets.json");
+	filter->global_preset_data = obs_data_create_from_json_file(filepath.array);
+	dstr_free(&filepath);
+
 	filter->rendered = false;
 	filter->rendering = false;
 	filter->width = 1920u;
@@ -119,6 +124,10 @@ static void noise_source_destroy(void *data)
 
 	if (filter->output_texrender) {
 		gs_texrender_destroy(filter->output_texrender);
+	}
+
+	if (filter->global_preset_data) {
+		obs_data_release(filter->global_preset_data);
 	}
 
 	obs_leave_graphics();
@@ -207,6 +216,15 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	filter->dw_iterations = (int)obs_data_get_int(settings, "dw_iterations");
 	filter->dw_strength.x = (float)obs_data_get_double(settings, "dw_strength_x");
 	filter->dw_strength.y = (float)obs_data_get_double(settings, "dw_strength_y");
+	if (!filter->is_filter) {
+		vec4_from_rgba(&filter->map_color_1,
+			       (uint32_t)obs_data_get_int(settings,
+							  "map_color_1"));
+		vec4_from_rgba(&filter->map_color_2,
+			       (uint32_t)obs_data_get_int(settings,
+							  "map_color_2"));
+	}
+
 }
 
 static void noise_displace_filter_video_render(void *data, gs_effect_t *effect)
@@ -359,6 +377,25 @@ static void noise_source_video_render(void *data, gs_effect_t *effect)
 	filter->rendering = false;
 }
 
+static bool tmp_export_clicked(obs_properties_t* props,
+	obs_property_t* property, void* data)
+{
+	noise_data_t *filter = data;
+	obs_data_t *settings = obs_source_get_settings(filter->context);
+
+	obs_data_t *output = obs_data_get_defaults(settings);
+	obs_data_apply(output, settings);
+	obs_data_unset_user_value(output, "presets");
+	obs_data_unset_user_value(output, "source_width");
+	obs_data_unset_user_value(output, "source_height");
+	//noise_source_defaults(settings);
+	const char *json = obs_data_get_json(output);
+	blog(LOG_INFO, "Clicked!\n%s", json);
+	obs_data_release(output);
+	obs_data_release(settings);
+	return false;
+}
+
 static obs_properties_t *noise_source_properties(void *data)
 {
 	noise_data_t *filter = data;
@@ -370,12 +407,12 @@ static obs_properties_t *noise_source_properties(void *data)
 		obs_properties_t *source_dimensions = obs_properties_create();
 
 		p = obs_properties_add_int(source_dimensions, "source_width",
-				       obs_module_text("Noise.Width"), 0, 8000,
-				       1);
+					   obs_module_text("Noise.Width"), 0,
+					   8000, 1);
 		obs_property_int_set_suffix(p, "px");
 		p = obs_properties_add_int(source_dimensions, "source_height",
-				       obs_module_text("Noise.Height"), 0,
-				       8000, 1);
+					   obs_module_text("Noise.Height"), 0,
+					   8000, 1);
 		obs_property_int_set_suffix(p, "px");
 		obs_properties_add_group(
 			props, "source_dimensions",
@@ -384,22 +421,42 @@ static obs_properties_t *noise_source_properties(void *data)
 	} else {
 		obs_properties_t *displacement_group = obs_properties_create();
 
-		p = obs_properties_add_float_slider(displacement_group,
-						"filter_displace_scale_x",
-						obs_module_text("Noise.Displacement.ScaleX"), 0.0, 400.0,
-						0.1);
+		p = obs_properties_add_float_slider(
+			displacement_group, "filter_displace_scale_x",
+			obs_module_text("Noise.Displacement.ScaleX"), 0.0,
+			400.0, 0.1);
 		obs_property_float_set_suffix(p, "px");
-		p = obs_properties_add_float_slider(displacement_group,
-						"filter_displace_scale_y",
-						obs_module_text("Noise.Displacement.ScaleY"), 0.0,
-						400.0, 0.1);
+		p = obs_properties_add_float_slider(
+			displacement_group, "filter_displace_scale_y",
+			obs_module_text("Noise.Displacement.ScaleY"), 0.0,
+			400.0, 0.1);
 		obs_property_float_set_suffix(p, "px");
 
-		obs_properties_add_group(
-			props, "displacement_group",
-			obs_module_text("Noise.Displacement"),
+		obs_properties_add_group(props, "displacement_group",
+					 obs_module_text("Noise.Displacement"),
 					 OBS_GROUP_NORMAL, displacement_group);
 	}
+
+	obs_property_t *presets_list = obs_properties_add_list(
+		props, "presets", obs_module_text("Noise.Presets"),
+		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+
+	obs_data_array_t *data_array =
+		obs_data_get_array(filter->global_preset_data, "presets");
+
+	obs_property_list_add_int(presets_list, obs_module_text("Noise.Custom"), 0);
+
+	for (size_t i = 0; i < obs_data_array_count(data_array); i++) {
+		obs_data_t *preset = obs_data_array_item(data_array, i);
+		const char *name = obs_data_get_string(preset, "name");
+		obs_property_list_add_int(presets_list, name, i+1);
+		obs_data_release(preset);
+	}
+
+	obs_data_array_release(data_array);
+
+	obs_property_set_modified_callback2(presets_list, setting_preset_selected, data);
+
 	obs_properties_t *general_noise_group = obs_properties_create();
 	obs_property_t *noise_type_list = obs_properties_add_list(
 		general_noise_group, "noise_type",
@@ -414,13 +471,17 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_property_list_add_int(noise_type_list,
 				  obs_module_text(NOISE_TYPE_SMOOTHSTEP_LABEL),
 				  NOISE_TYPE_SMOOTHSTEP);
-
+	obs_property_t *noise_channels_list = NULL;
 	if (!filter->is_filter) {
-		obs_property_t *noise_channels_list = obs_properties_add_list(
+		noise_channels_list = obs_properties_add_list(
 			general_noise_group, "noise_channels",
 			obs_module_text("Noise.Channels"), OBS_COMBO_TYPE_LIST,
 			OBS_COMBO_FORMAT_INT);
 
+		obs_property_list_add_int(
+			noise_channels_list,
+			obs_module_text(NOISE_CHANNELS_COLOR_MAP_LABEL),
+			NOISE_CHANNELS_COLOR_MAP);
 		obs_property_list_add_int(
 			noise_channels_list,
 			obs_module_text(NOISE_CHANNELS_1_LABEL),
@@ -449,6 +510,25 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_properties_add_group(props, "general_noise_group",
 				 obs_module_text("Noise.GeneralProperties"),
 				 OBS_GROUP_NORMAL, general_noise_group);
+
+	if (!filter->is_filter) {
+		obs_properties_t *color_map_group = obs_properties_create();
+		
+		obs_properties_add_color_alpha(
+			color_map_group, "map_color_1",
+			obs_module_text("Noise.ColorMap.Color1"));
+
+		obs_properties_add_color_alpha(
+			color_map_group, "map_color_2",
+			obs_module_text("Noise.ColorMap.Color2"));
+
+		obs_properties_add_group(
+			props, "color_map_group",
+			obs_module_text("Noise.ColorMap"),
+			OBS_GROUP_NORMAL, color_map_group);
+		obs_property_set_modified_callback(noise_channels_list,
+						   setting_channels_modified);
+	}
 
 
 	obs_properties_t *transform_group = obs_properties_create();
@@ -540,7 +620,7 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_properties_t *evolution_group = obs_properties_create();
 
 	obs_properties_add_float_slider(evolution_group, "speed", "Speed", 0.0f,
-					500.0f,
+					9001.0f,
 					0.1f);
 	obs_properties_add_group(props, "evolution_group",
 				 obs_module_text("Noise.Evolution"), OBS_GROUP_NORMAL,
@@ -548,6 +628,9 @@ static obs_properties_t *noise_source_properties(void *data)
 
 	obs_properties_add_text(props, "plugin_info", PLUGIN_INFO,
 				OBS_TEXT_INFO);
+
+	obs_properties_add_button2(props, "export_btn", "Temp Export",
+				  tmp_export_clicked, data);
 
 	return props;
 }
@@ -569,6 +652,49 @@ static void noise_source_video_tick(void *data, float seconds)
 	filter->rendered = false;
 }
 
+static bool setting_channels_modified(obs_properties_t *props,
+				    obs_property_t *p, obs_data_t *settings)
+{
+	UNUSED_PARAMETER(p);
+	int output = (int)obs_data_get_int(settings, "noise_channels");
+	if (output == NOISE_CHANNELS_COLOR_MAP) {
+		setting_visibility("color_map_group", true, props);
+	} else {
+		setting_visibility("color_map_group", false, props);
+	}
+	 
+	return true;
+}
+
+static bool setting_preset_selected(void *data, obs_properties_t *props,
+					 obs_property_t *p,
+					 obs_data_t *settings)
+{
+	UNUSED_PARAMETER(p);
+	UNUSED_PARAMETER(props);
+	noise_data_t *filter = data;
+
+	size_t index = (size_t)obs_data_get_int(settings, "presets");
+
+	if (index == 0) {
+		return false;
+	}
+
+	obs_data_array_t *data_array =
+		obs_data_get_array(filter->global_preset_data, "presets");
+
+	obs_data_t *preset = obs_data_array_item(data_array, index-1);
+	obs_data_t *preset_settings = obs_data_get_obj(preset, "settings");
+
+	obs_data_apply(settings, preset_settings);
+
+	obs_data_release(preset_settings);
+	obs_data_release(preset);
+	obs_data_array_release(data_array);
+
+	return true;
+}
+
 static void noise_source_defaults(obs_data_t *settings)
 {
 	obs_data_set_default_int(settings, "layers", 4);
@@ -582,14 +708,22 @@ static void noise_source_defaults(obs_data_t *settings)
 	obs_data_set_default_bool(settings, "invert", false);
 	obs_data_set_default_double(settings, "sub_scale_x", 50.0);
 	obs_data_set_default_double(settings, "sub_scale_y", 50.0);
+	obs_data_set_default_double(settings, "sub_rotation", 0.0);
+	obs_data_set_default_double(settings, "sub_displace_x", 0.0);
+	obs_data_set_default_double(settings, "sub_displace_y", 0.0);
 	obs_data_set_default_double(settings, "brightness", 0.0);
 	obs_data_set_default_double(settings, "contrast", 0.0);
+	obs_data_set_default_double(settings, "base_rotation", 0.0);
 	obs_data_set_default_double(settings, "pixel_width", 64.0);
 	obs_data_set_default_double(settings, "pixel_height", 64.0);
-	obs_data_set_default_int(settings, "noise_channels", 1);
+	obs_data_set_default_int(settings, "noise_channels", NOISE_CHANNELS_COLOR_MAP);
 	obs_data_set_default_int(settings, "noise_type", NOISE_TYPE_SMOOTHSTEP);
-	obs_data_set_default_int(settings, "layer_combo_type",
-				 NOISE_LAYER_WEIGHTED_AVERAGE);
+	obs_data_set_default_int(settings, "layer_combo_type", NOISE_LAYER_WEIGHTED_AVERAGE);
+	obs_data_set_default_double(settings, "dw_strength_x", 25.0);
+	obs_data_set_default_double(settings, "dw_strength_y", 25.0);
+	obs_data_set_default_int(settings, "dw_iterations", 0);
+	obs_data_set_default_int(settings, "map_color_1", DEFAULT_MAP_COLOR_1);
+	obs_data_set_default_int(settings, "map_color_2", DEFAULT_MAP_COLOR_2);
 }
 
 static void draw_output(noise_data_t *filter)
@@ -711,6 +845,17 @@ static void render_noise(noise_data_t *filter)
 	if (filter->param_global_rotation) {
 		gs_effect_set_float(filter->param_global_rotation,
 				    filter->global_rotation);
+	}
+
+	if (filter->channels == 0) {
+		if (filter->param_color_1) {
+			gs_effect_set_vec4(filter->param_color_1,
+					   &filter->map_color_1);
+		}
+		if (filter->param_color_2) {
+			gs_effect_set_vec4(filter->param_color_2,
+					   &filter->map_color_2);
+		}
 	}
 
 	set_blending_parameters();
@@ -920,6 +1065,10 @@ static void load_noise_effect(noise_data_t *filter)
 				filter->param_dw_strength = param;
 			} else if (strcmp(info.name, "global_rotation") == 0) {
 				filter->param_global_rotation = param;
+			} else if (strcmp(info.name, "color_1") == 0) {
+				filter->param_color_1 = param;
+			} else if (strcmp(info.name, "color_2") == 0) {
+				filter->param_color_2 = param;
 			}
 		}
 	}
