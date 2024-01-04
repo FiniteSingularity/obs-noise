@@ -377,24 +377,24 @@ static void noise_source_video_render(void *data, gs_effect_t *effect)
 	filter->rendering = false;
 }
 
-static bool tmp_export_clicked(obs_properties_t* props,
-	obs_property_t* property, void* data)
-{
-	noise_data_t *filter = data;
-	obs_data_t *settings = obs_source_get_settings(filter->context);
-
-	obs_data_t *output = obs_data_get_defaults(settings);
-	obs_data_apply(output, settings);
-	obs_data_unset_user_value(output, "presets");
-	obs_data_unset_user_value(output, "source_width");
-	obs_data_unset_user_value(output, "source_height");
-	//noise_source_defaults(settings);
-	const char *json = obs_data_get_json(output);
-	blog(LOG_INFO, "Clicked!\n%s", json);
-	obs_data_release(output);
-	obs_data_release(settings);
-	return false;
-}
+//static bool tmp_export_clicked(obs_properties_t* props,
+//	obs_property_t* property, void* data)
+//{
+//	noise_data_t *filter = data;
+//	obs_data_t *settings = obs_source_get_settings(filter->context);
+//
+//	obs_data_t *output = obs_data_get_defaults(settings);
+//	obs_data_apply(output, settings);
+//	obs_data_unset_user_value(output, "presets");
+//	obs_data_unset_user_value(output, "source_width");
+//	obs_data_unset_user_value(output, "source_height");
+//	//noise_source_defaults(settings);
+//	const char *json = obs_data_get_json(output);
+//	blog(LOG_INFO, "Clicked!\n%s", json);
+//	obs_data_release(output);
+//	obs_data_release(settings);
+//	return false;
+//}
 
 static obs_properties_t *noise_source_properties(void *data)
 {
@@ -629,8 +629,8 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_properties_add_text(props, "plugin_info", PLUGIN_INFO,
 				OBS_TEXT_INFO);
 
-	obs_properties_add_button2(props, "export_btn", "Temp Export",
-				  tmp_export_clicked, data);
+	//obs_properties_add_button2(props, "export_btn", "Temp Export",
+	//			  tmp_export_clicked, data);
 
 	return props;
 }
