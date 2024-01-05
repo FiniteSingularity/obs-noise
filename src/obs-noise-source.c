@@ -670,8 +670,6 @@ static bool setting_preset_selected(void *data, obs_properties_t *props,
 					 obs_property_t *p,
 					 obs_data_t *settings)
 {
-	UNUSED_PARAMETER(p);
-	UNUSED_PARAMETER(props);
 	noise_data_t *filter = data;
 
 	size_t index = (size_t)obs_data_get_int(settings, "presets");
@@ -691,6 +689,8 @@ static bool setting_preset_selected(void *data, obs_properties_t *props,
 	obs_data_release(preset_settings);
 	obs_data_release(preset);
 	obs_data_array_release(data_array);
+
+	setting_channels_modified(props, p, settings);
 
 	return true;
 }
