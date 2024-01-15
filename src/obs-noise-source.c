@@ -54,7 +54,7 @@ static void *noise_displace_filter_create(obs_data_t *settings,
 
 	noise_create(filter);
 
-	load_noise_displace_effect(filter);
+	//load_noise_displace_effect(filter);
 	load_output_effect(filter);
 
 	obs_source_update(source, settings);
@@ -201,6 +201,9 @@ static void noise_source_update(void *data, obs_data_t *settings)
 		(float)obs_data_get_double(settings, "base_offset_x");
 	filter->global_offset.y =
 		(float)obs_data_get_double(settings, "base_offset_y");
+
+	filter->contour = obs_data_get_bool(settings, "contour");
+	filter->num_contours = (int)obs_data_get_int(settings, "num_contours");
 
 	double sum_influence = 0.0;
 	//double std_scale = 0.0;
@@ -524,6 +527,13 @@ static obs_properties_t *noise_source_properties(void *data)
 				obs_module_text("Noise.Billow"));
 	obs_properties_add_bool(general_noise_group, "ridged",
 				obs_module_text("Noise.Ridged"));
+	obs_properties_add_bool(general_noise_group, "contour",
+				obs_module_text("Noise.Contour"));
+
+	obs_properties_add_int_slider(general_noise_group, "num_contours",
+				      obs_module_text("Noise.NumContour"), 0,
+				      10, 1);
+
 	obs_properties_add_float_slider(general_noise_group, "brightness",
 					obs_module_text("Noise.Brightness"),
 					-1.0, 1.0, 0.01);
@@ -906,6 +916,15 @@ static void render_noise(noise_data_t *filter)
 				    filter->global_rotation);
 	}
 
+	if (filter->param_contours) {
+		gs_effect_set_bool(filter->param_contours,
+				    filter->contour);
+	}
+
+	if (filter->param_num_contours) {
+		gs_effect_set_float(filter->param_num_contours, (float)filter->num_contours);
+	}
+
 	if (filter->param_global_offset) {
 		gs_effect_set_vec2(filter->param_global_offset,
 				   &filter->global_offset);
@@ -1068,6 +1087,15 @@ static void render_noise_displace(noise_data_t *filter)
 				   &filter->global_offset);
 	}
 
+	if (filter->param_contours) {
+		gs_effect_set_bool(filter->param_contours, filter->contour);
+	}
+
+	if (filter->param_num_contours) {
+		gs_effect_set_float(filter->param_num_contours,
+				    (float)filter->num_contours);
+	}
+
 	set_blending_parameters();
 	uint32_t width = filter->width;
 	uint32_t height = filter->height;
@@ -1144,6 +1172,10 @@ static void load_noise_effect(noise_data_t *filter)
 				filter->param_color_2 = param;
 			} else if (strcmp(info.name, "global_offset") == 0) {
 				filter->param_global_offset = param;
+			} else if (strcmp(info.name, "contours") == 0) {
+				filter->param_contours = param;
+			} else if (strcmp(info.name, "num_contours") == 0) {
+				filter->param_num_contours = param;
 			}
 		}
 	}
@@ -1211,6 +1243,10 @@ static void load_noise_displace_effect(noise_data_t *filter)
 				filter->param_global_rotation = param;
 			} else if (strcmp(info.name, "global_offset") == 0) {
 				filter->param_global_offset = param;
+			} else if (strcmp(info.name, "contours") == 0) {
+				filter->param_contours = param;
+			} else if (strcmp(info.name, "num_contours") == 0) {
+				filter->param_num_contours = param;
 			}
 		}
 	}

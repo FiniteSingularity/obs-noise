@@ -430,9 +430,17 @@ float3 map_billow(float3 c)
 	return pow(abs((c - 0.5) * 2.0), float3(power, power, power));
 }
 
-float3 map_noise(float3 c)
+float3 map_contour(float3 c)
 {
-	return billow ? map_billow(c) : map_basic(c);
+	c = c * num_contours;
+	float3 fc = frac(c);
+	return pow(fc, float3(power, power, power));
+}
+
+float3 map_noise(float3 c)			  
+{						  
+	c = billow ? map_billow(c) : map_basic(c);
+	return c;
 }
 
 float3 fractal_noise(float2 uv)
@@ -451,8 +459,10 @@ float3 fractal_noise(float2 uv)
 		influence *= sub_influence;
 	}
 	result = result / sum_influence;
-	return result;
-	return std_scale * (result - 0.5) + result
+	//return result;
+	result = std_scale * (result - 0.5) + 0.5;
+	return contours ? map_contour(result) : result;
+}
 
 float3 fractal_noise_max(float2 uv)
 {

@@ -23,6 +23,8 @@ uniform float contrast;
 uniform bool billow;
 uniform bool ridged;
 uniform float power;
+uniform bool contours;
+uniform float num_contours;
 
 uniform int dw_iterations;
 uniform float2 dw_strength;

@@ -20,6 +20,8 @@ uniform float brightness;
 
 uniform bool billow;
 uniform bool ridged;
+uniform bool contours;
+uniform float num_contours;
 uniform float power;
 
 uniform int dw_iterations;

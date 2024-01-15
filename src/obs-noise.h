@@ -85,6 +85,8 @@ struct noise_data {
 	float std_scale;
 	float global_rotation;
 	struct vec2 global_offset;
+	bool contour;
+	int num_contours;
 
 	bool billow;
 	bool ridged;
@@ -129,6 +131,8 @@ struct noise_data {
 
 	gs_eparam_t *param_color_1;
 	gs_eparam_t *param_color_2;
+	gs_eparam_t *param_contours;
+	gs_eparam_t *param_num_contours;
 
 	float clock_time;
 
