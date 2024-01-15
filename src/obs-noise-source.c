@@ -54,7 +54,7 @@ static void *noise_displace_filter_create(obs_data_t *settings,
 
 	noise_create(filter);
 
-	//load_noise_displace_effect(filter);
+	load_noise_displace_effect(filter);
 	load_output_effect(filter);
 
 	obs_source_update(source, settings);
@@ -527,9 +527,10 @@ static obs_properties_t *noise_source_properties(void *data)
 				obs_module_text("Noise.Billow"));
 	obs_properties_add_bool(general_noise_group, "ridged",
 				obs_module_text("Noise.Ridged"));
-	obs_properties_add_bool(general_noise_group, "contour",
+	p = obs_properties_add_bool(general_noise_group, "contour",
 				obs_module_text("Noise.Contour"));
-
+	obs_property_set_modified_callback(p,
+					   setting_contours_modified);
 	obs_properties_add_int_slider(general_noise_group, "num_contours",
 				      obs_module_text("Noise.NumContour"), 0,
 				      10, 1);
@@ -715,6 +716,16 @@ static bool setting_channels_modified(obs_properties_t *props,
 		obs_properties_get(props, "noise_type");
 	bool disable = output == NOISE_CHANNELS_2 || output == NOISE_CHANNELS_3;
 	obs_property_list_item_disable(noise_type_property, 3, disable);
+	return true;
+}
+
+static bool setting_contours_modified(obs_properties_t *props,
+				      obs_property_t *p, obs_data_t *settings)
+{
+	UNUSED_PARAMETER(p);
+	bool contours = obs_data_get_bool(settings, "contour");
+	setting_visibility("num_contours", contours, props);
+	
 	return true;
 }
 

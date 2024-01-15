@@ -36,3 +36,5 @@ static bool setting_channels_modified(obs_properties_t *props,
 				      obs_property_t *p, obs_data_t *settings);
 static bool setting_noise_type_modified(obs_properties_t *props,
 				      obs_property_t *p, obs_data_t *settings);
+static bool setting_contours_modified(obs_properties_t *props,
+				      obs_property_t *p, obs_data_t *settings);

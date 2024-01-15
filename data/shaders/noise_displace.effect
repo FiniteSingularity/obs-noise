@@ -57,6 +57,26 @@ float4 mainImage(VertData v_in) : TARGET
 	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
 }
 
+float4 mainImageMax(VertData v_in) : TARGET
+{
+	// 1. Get first pass of fractal noise
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise_max(uv);
+	// 2. Apply Domain Warping
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+
+	// 3. Prepare and return pixel value
+	value.rgb = adjustments(float4(value, 1.0), brightness, contrast);
+	// Scale 0-1 value to -1 to 1, then multiple by displace scale 
+	float2 offset = 2.0 * (value.rg - 0.5) * displace_scale;
+	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
+}
+
 technique Draw
 {
 	pass
@@ -66,11 +86,11 @@ technique Draw
 	}
 }
 
-//technique DrawMax
-//{
-//	pass
-//	{
-//		vertex_shader = mainTransform(v_in);
-//		pixel_shader = mainImageMax(v_in);
-//	}
-//}
+technique DrawMax
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImageMax(v_in);
+	}
+}
