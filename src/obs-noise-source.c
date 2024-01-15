@@ -711,6 +711,7 @@ static bool setting_channels_modified(obs_properties_t *props,
 static bool setting_noise_type_modified(obs_properties_t *props,
 					obs_property_t *p, obs_data_t *settings)
 {
+	UNUSED_PARAMETER(p);
 	int noise_type = (int)obs_data_get_int(settings, "noise_type");
 	obs_property_t *noise_channels_property =
 		obs_properties_get(props, "noise_channels");
