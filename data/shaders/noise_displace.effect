@@ -36,41 +36,22 @@ VertData mainTransform(VertData v_in)
 }
 
 float4 mainImage(VertData v_in) : TARGET
-{
-	//float3 output = float3(0.0, 0.0, 0.0);
-	//float influence = 1.0;
-	//float sum_influence = 0.0;
-	//for (int i = 0; i < layers; i++)
-	//{
-	//	float layer_offset = hash33(float3(float(i), float(i), float(i))).x;
-	//	float2 scale = pow(sub_scaling, float2(float(i), float(i)));
-		
-	//	float3 c = sample_noise(v_in.uv, i, scale);
-	//	c = map_noise(c);
-	//	output += c * influence;
-	//	sum_influence += influence;
-	//	influence *= sub_influence;
-	//}
-	//output = output / sum_influence;
-	//output.rgb = adjustments(float4(output, 1.0), brightness, contrast);
-	//float2 offset = 2.0 * (output.rg - 0.5) * displace_scale;
-	//return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
-	
+{	
 	// 1. Get first pass of fractal noise
 	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise(uv);
+	float3 value = fractal_noise(uv);
 	// 2. Apply Domain Warping
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
 
-	// 3. Prepare and return pixel output
-	output.rgb = adjustments(float4(output, 1.0), brightness, contrast);
-	// Scale 0-1 output to -1 to 1, then multiple by displace scale 
-	float2 offset = 2.0 * (output.rg - 0.5) * displace_scale;
+	// 3. Prepare and return pixel value
+	value.rgb = adjustments(float4(value, 1.0), brightness, contrast);
+	// Scale 0-1 value to -1 to 1, then multiple by displace scale 
+	float2 offset = 2.0 * (value.rg - 0.5) * displace_scale;
 	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
 }
 
