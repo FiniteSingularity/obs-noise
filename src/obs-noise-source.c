@@ -151,7 +151,6 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	// Called after UI is updated, should assign new UI values to
 	// data structure pointers/values/etc..
 	noise_data_t *filter = data;
-
 	filter->time = (float)obs_data_get_double(settings, "time");
 	if (!filter->is_filter) {
 		filter->width =
@@ -167,6 +166,7 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	filter->pixel_size.y =
 		(float)obs_data_get_double(settings, "pixel_height");
 	filter->layers = (uint32_t)obs_data_get_int(settings, "layers");
+
 	filter->speed = (float)obs_data_get_double(settings, "speed") / 100.0f;
 	filter->sub_influence =
 		(float)obs_data_get_double(settings, "sub_influence");
@@ -197,6 +197,10 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	filter->ridged = obs_data_get_bool(settings, "ridged");
 	filter->power = (float)obs_data_get_double(settings, "power");
 	filter->global_rotation = (float)obs_data_get_double(settings, "base_rotation") * M_PI / 180.0f;
+	filter->global_offset.x =
+		(float)obs_data_get_double(settings, "base_offset_x");
+	filter->global_offset.y =
+		(float)obs_data_get_double(settings, "base_offset_y");
 
 	double sum_influence = 0.0;
 	//double std_scale = 0.0;
@@ -224,7 +228,6 @@ static void noise_source_update(void *data, obs_data_t *settings)
 			       (uint32_t)obs_data_get_int(settings,
 							  "map_color_2"));
 	}
-
 }
 
 static void noise_displace_filter_video_render(void *data, gs_effect_t *effect)
@@ -403,6 +406,7 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 	obs_properties_set_param(props, filter, NULL);
 	obs_property_t *p = NULL;
+
 	if (!filter->is_filter) {
 		obs_properties_t *source_dimensions = obs_properties_create();
 
@@ -438,11 +442,18 @@ static obs_properties_t *noise_source_properties(void *data)
 	}
 
 	obs_property_t *presets_list = obs_properties_add_list(
-		props, "presets", obs_module_text("Noise.Presets"),
+		props, "presets", "",
 		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 
-	obs_data_array_t *data_array =
-		obs_data_get_array(filter->global_preset_data, "presets");
+	obs_data_array_t *data_array = NULL;
+
+	if (!filter->is_filter) {
+		data_array = obs_data_get_array(filter->global_preset_data,
+						"presets");
+	} else {
+		data_array = obs_data_get_array(filter->global_preset_data,
+						"displace_presets");
+	}
 
 	obs_property_list_add_int(presets_list, obs_module_text("Noise.Custom"), 0);
 
@@ -458,6 +469,9 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_property_set_modified_callback2(presets_list, setting_preset_selected, data);
 
 	obs_properties_t *general_noise_group = obs_properties_create();
+	obs_properties_add_text(general_noise_group, "noise_type_note",
+				obs_module_text("Noise.Type.OpenSimplexNote"),
+				OBS_TEXT_INFO);
 	obs_property_t *noise_type_list = obs_properties_add_list(
 		general_noise_group, "noise_type",
 		obs_module_text("Noise.Type"),
@@ -471,6 +485,16 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_property_list_add_int(noise_type_list,
 				  obs_module_text(NOISE_TYPE_SMOOTHSTEP_LABEL),
 				  NOISE_TYPE_SMOOTHSTEP);
+	obs_property_list_add_int(noise_type_list,
+				  obs_module_text(NOISE_TYPE_OPEN_SIMPLEX_LABEL),
+				  NOISE_TYPE_OPEN_SIMPLEX);
+	obs_property_list_add_int(noise_type_list,
+				  obs_module_text(NOISE_TYPE_WORLEY_LABEL),
+				  NOISE_TYPE_WORLEY);
+
+	obs_property_set_modified_callback(noise_type_list,
+					     setting_noise_type_modified);
+
 	obs_property_t *noise_channels_list = NULL;
 	if (!filter->is_filter) {
 		noise_channels_list = obs_properties_add_list(
@@ -533,10 +557,23 @@ static obs_properties_t *noise_source_properties(void *data)
 
 	obs_properties_t *transform_group = obs_properties_create();
 
+	p = obs_properties_add_float(
+		transform_group, "base_offset_x",
+		obs_module_text("Noise.Transform.BaseOffsetX"), -8000000.0, 8000000.0,
+		1.0);
+	obs_property_float_set_suffix(p, "px");
+
+	p = obs_properties_add_float(
+		transform_group, "base_offset_y",
+		obs_module_text("Noise.Transform.BaseOffsetY"), -8000000.0, 8000000.0,
+		1.0);
+	obs_property_float_set_suffix(p, "px");
+
 	p = obs_properties_add_float_slider(
 		transform_group, "base_rotation",
 		obs_module_text("Noise.Transform.BaseRotation"), -360.0, 360.0, 0.1);
 	obs_property_float_set_suffix(p, "deg");
+
 	p = obs_properties_add_float_slider(transform_group, "pixel_width",
 					obs_module_text("Noise.Transform.BasePixelWidth"),
 					1.0, 1920.0, 1.0);
@@ -646,6 +683,8 @@ static void noise_source_video_tick(void *data, float seconds)
 		}
 		filter->width = (uint32_t)obs_source_get_base_width(target);
 		filter->height = (uint32_t)obs_source_get_base_height(target);
+		filter->uv_size.x = (float)filter->width;
+		filter->uv_size.y = (float)filter->height;
 	}
 
 	filter->clock_time += seconds * filter->speed;
@@ -662,7 +701,22 @@ static bool setting_channels_modified(obs_properties_t *props,
 	} else {
 		setting_visibility("color_map_group", false, props);
 	}
-	 
+	obs_property_t *noise_type_property =
+		obs_properties_get(props, "noise_type");
+	bool disable = output == NOISE_CHANNELS_2 || output == NOISE_CHANNELS_3;
+	obs_property_list_item_disable(noise_type_property, 3, disable);
+	return true;
+}
+
+static bool setting_noise_type_modified(obs_properties_t *props,
+					obs_property_t *p, obs_data_t *settings)
+{
+	int noise_type = (int)obs_data_get_int(settings, "noise_type");
+	obs_property_t *noise_channels_property =
+		obs_properties_get(props, "noise_channels");
+	bool disable = noise_type == NOISE_TYPE_OPEN_SIMPLEX;
+	obs_property_list_item_disable(noise_channels_property, 3, disable);
+	obs_property_list_item_disable(noise_channels_property, 2, disable);
 	return true;
 }
 
@@ -692,6 +746,8 @@ static bool setting_preset_selected(void *data, obs_properties_t *props,
 
 	setting_channels_modified(props, p, settings);
 
+	obs_data_set_int(settings, "presets", 0);
+
 	return true;
 }
 
@@ -714,6 +770,8 @@ static void noise_source_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "brightness", 0.0);
 	obs_data_set_default_double(settings, "contrast", 0.0);
 	obs_data_set_default_double(settings, "base_rotation", 0.0);
+	obs_data_set_default_double(settings, "base_offset_x", 0.0);
+	obs_data_set_default_double(settings, "base_offset_y", 0.0);
 	obs_data_set_default_double(settings, "pixel_width", 64.0);
 	obs_data_set_default_double(settings, "pixel_height", 64.0);
 	obs_data_set_default_int(settings, "noise_channels", NOISE_CHANNELS_COLOR_MAP);
@@ -845,6 +903,11 @@ static void render_noise(noise_data_t *filter)
 	if (filter->param_global_rotation) {
 		gs_effect_set_float(filter->param_global_rotation,
 				    filter->global_rotation);
+	}
+
+	if (filter->param_global_offset) {
+		gs_effect_set_vec2(filter->param_global_offset,
+				   &filter->global_offset);
 	}
 
 	if (filter->channels == 0) {
@@ -979,7 +1042,7 @@ static void render_noise_displace(noise_data_t *filter)
 	}
 
 	if (filter->param_sum_influence) {
-		gs_effect_set_bool(filter->param_sum_influence, filter->sum_influence);
+		gs_effect_set_float(filter->param_sum_influence, filter->sum_influence);
 	}
 
 	if (filter->param_std_scale) {
@@ -994,6 +1057,15 @@ static void render_noise_displace(noise_data_t *filter)
 		gs_effect_set_vec2(filter->param_dw_strength, &filter->dw_strength);
 	}
 
+	if (filter->param_global_rotation) {
+		gs_effect_set_float(filter->param_global_rotation,
+				    filter->global_rotation);
+	}
+
+	if (filter->param_global_offset) {
+		gs_effect_set_vec2(filter->param_global_offset,
+				   &filter->global_offset);
+	}
 
 	set_blending_parameters();
 	uint32_t width = filter->width;
@@ -1069,6 +1141,8 @@ static void load_noise_effect(noise_data_t *filter)
 				filter->param_color_1 = param;
 			} else if (strcmp(info.name, "color_2") == 0) {
 				filter->param_color_2 = param;
+			} else if (strcmp(info.name, "global_offset") == 0) {
+				filter->param_global_offset = param;
 			}
 		}
 	}
@@ -1134,6 +1208,8 @@ static void load_noise_displace_effect(noise_data_t *filter)
 				filter->param_dw_strength = param;
 			} else if (strcmp(info.name, "global_rotation") == 0) {
 				filter->param_global_rotation = param;
+			} else if (strcmp(info.name, "global_offset") == 0) {
+				filter->param_global_offset = param;
 			}
 		}
 	}

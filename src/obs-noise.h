@@ -17,6 +17,10 @@
 #define NOISE_TYPE_LINEAR_LABEL "Noise.Type.Linear"
 #define NOISE_TYPE_SMOOTHSTEP 2
 #define NOISE_TYPE_SMOOTHSTEP_LABEL "Noise.Type.Smoothstep"
+#define NOISE_TYPE_OPEN_SIMPLEX 3
+#define NOISE_TYPE_OPEN_SIMPLEX_LABEL "Noise.Type.OpenSimplex"
+#define NOISE_TYPE_WORLEY 4
+#define NOISE_TYPE_WORLEY_LABEL "Noise.Type.Worley"
 
 #define NOISE_LAYER_WEIGHTED_AVERAGE_LABEL "Noise.LayerComb.WeightedAverage"
 #define NOISE_LAYER_WEIGHTED_AVERAGE 1
@@ -80,6 +84,8 @@ struct noise_data {
 	float sum_influence;
 	float std_scale;
 	float global_rotation;
+	struct vec2 global_offset;
+
 	bool billow;
 	bool ridged;
 	bool comb_max;
@@ -117,6 +123,7 @@ struct noise_data {
 	gs_eparam_t *param_dw_iterations;
 	gs_eparam_t *param_dw_strength;
 	gs_eparam_t *param_global_rotation;
+	gs_eparam_t *param_global_offset;
 
 	gs_eparam_t *param_output_image;
 
