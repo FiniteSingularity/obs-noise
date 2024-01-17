@@ -1,0 +1,489 @@
+sampler_state textureSampler{
+    Filter = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+    MinLOD = 0;
+    MaxLOD = 0;
+};
+
+
+float2 global_transform(float2 uv_in, float2 shift, float rot)
+{
+	uv_in -= shift;
+	uv_in = uv_in * uv_size;
+	uv_in += global_offset;
+	uv_in = float2(uv_in.x * cos(rot) - uv_in.y * sin(rot), uv_in.x * sin(rot) + uv_in.y * cos(rot));
+	uv_in = uv_in / uv_size;
+	uv_in += shift;
+	return uv_in;
+}
+
+
+float2 transform(float2 uv_in, float2 shift, float rot)
+{
+	uv_in -= shift;
+	uv_in = uv_in * uv_size;
+	uv_in = float2(uv_in.x * cos(rot) - uv_in.y * sin(rot), uv_in.x * sin(rot) + uv_in.y * cos(rot));
+	uv_in = uv_in / uv_size;
+	uv_in += shift;
+	return uv_in;
+}
+
+float4 adjustments(float4 color, float b, float c)
+{
+	// Calculate Contrast Value
+	float ca = c < 0.0f ? 1.0f / (-c + 1.0f) : (c + 1.0f);
+
+	float3 col = float3(
+		ca * color.r + b,
+		ca * color.g + b,
+		ca * color.b + b
+	);
+	if (ridged)
+	{
+		col = 1.0 - col;
+	}
+	return float4(col, color.a);
+}
+
+// pcg44
+uint4 pcg4d(uint4 v)
+{
+	v = v * 1664525u + 1013904223u;
+    
+	v.x += v.y * v.w;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	v.w += v.y * v.z;
+    
+	v ^= v >> 16u;
+    
+	v.x += v.y * v.w;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	v.w += v.y * v.z;
+    
+	return v;
+}
+
+// pcg33
+uint3 pcg3d(uint3 v)
+{
+
+	v = v * 1664525u + 1013904223u;
+
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+
+	v ^= v >> 16u;
+
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+
+	return v;
+}
+
+uint pcg(uint v)
+{
+	uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	return (word >> 22u) ^ word;
+}
+
+float4 hash44(float4 src)
+{
+	uint4 u = uint4(src + 8000000.0f);
+	return float4(pcg4d(u)) * (1.0 / float(0xffffffffu));
+}
+
+// 3 outputs, 3 inputs
+float3 hash33(float3 src)
+{
+	uint3 u = uint3(src + 8000000.0f);
+	return float3(pcg3d(u)) * (1.0 / float(0xffffffffu));
+}
+
+// 1 input, 1 output
+float hash11(float src)
+{
+	return float(pcg(uint(src)) * 1.0 / float(0xffffffffu));
+}
+
+////////////////// K.jpg's Smooth Re-oriented 8-Point BCC Noise //////////////////
+//////////////////// Output: float4(dF/dx, dF/dy, dF/dz, value) ////////////////////
+
+// Borrowed from Stefan Gustavson's noise code
+float4 permute(float4 t)
+{
+	return t * (t * 34.0 + 133.0);
+}
+
+float mod(float x, float y)
+{
+	return x - y * floor(x / y);
+}
+
+float2 mod(float2 x, float2 y)
+{
+	return x - y * floor(x / y);
+}
+
+float3 mod(float3 x, float3 y)
+{
+	return x - y * floor(x / y);
+}
+
+float4 mod4(float4 x, float4 y)
+{
+	return x - y * floor(x / y);
+}
+
+// Gradient set is a normalized expanded rhombic dodecahedron
+float3 grad(float hash)
+{
+	// Random vertex of a cube, +/- 1 each
+	float3 cube = mod(floor(hash / float3(1.0, 2.0, 4.0)), 2.0) * 2.0 - 1.0;
+
+	// Random edge of the three edges connected to that vertex
+	// Also a cuboctahedral vertex
+	// And corresponds to the face of its dual, the rhombic dodecahedron
+	float3 cuboct = cube;
+
+	int index = int(hash / 16.0);
+	if (index == 0)
+		cuboct.x = 0.0;
+	else if (index == 1)
+		cuboct.y = 0.0;
+	else
+		cuboct.z = 0.0;
+
+	// In a funky way, pick one of the four points on the rhombic face
+	float type = mod(floor(hash / 8.0), 2.0);
+	float3 rhomb = (1.0 - type) * cube + type * (cuboct + cross(cube, cuboct));
+
+	// Expand it so that the new edges are the same length
+	// as the existing ones
+	float3 grad = cuboct * 1.22474487139 + rhomb;
+
+	// To make all gradients the same length, we only need to shorten the
+	// second type of vector. We also put in the whole noise scale constant.
+	// The compiler should reduce it into the existing floats. I think.
+	grad *= (1.0 - 0.042942436724648037 * type) * 3.5946317686139184;
+
+	return grad;
+}
+
+// BCC lattice split up into 2 cube lattices
+float4 openSimplex2SDerivativesPart(float3 X)
+{
+	float3 b = floor(X);
+	float4 i4 = float4(X - b, 2.5);
+
+	// Pick between each pair of oppposite corners in the cube.
+	float3 v1 = b + floor(dot(i4, float4(.25, .25, .25, .25)));
+	float3 v2 = b + float3(1, 0, 0) + float3(-1, 1, 1) * floor(dot(i4, float4(-.25, .25, .25, .35)));
+	float3 v3 = b + float3(0, 1, 0) + float3(1, -1, 1) * floor(dot(i4, float4(.25, -.25, .25, .35)));
+	float3 v4 = b + float3(0, 0, 1) + float3(1, 1, -1) * floor(dot(i4, float4(.25, .25, -.25, .35)));
+
+	// Gradient hashes for the four vertices in this half-lattice.
+	//float4 hashes = permute(mod4(float4(v1.x, v2.x, v3.x, v4.x), float4(289.0, 289.0, 289.0, 289.0)));
+	//hashes = permute(mod4(hashes + float4(v1.y, v2.y, v3.y, v4.y), float4(289.0, 289.0, 289.0, 289.0)));
+	//hashes = mod4(permute(mod4(hashes + float4(v1.z, v2.z, v3.z, v4.z), float4(289.0, 289.0, 289.0, 289.0))), float4(48.0, 48.0, 48.0, 48.0));
+
+	float4 hashes = float4(
+		hash33(v1).x, hash33(v2).x, hash33(v3).x, hash33(v4).x
+	) * 47.0;
+
+	
+	// Gradient extrapolations & kernel function
+	float3 d1 = X - v1;
+	float3 d2 = X - v2;
+	float3 d3 = X - v3;
+	float3 d4 = X - v4;
+	float4 a = max(float4(0.75, 0.75, 0.75, 0.75) - float4(dot(d1, d1), dot(d2, d2), dot(d3, d3), dot(d4, d4)), float4(0.0, 0.0, 0.0, 0.0));
+	float4 aa = a * a;
+	float4 aaaa = aa * aa;
+	float3 g1 = grad(hashes.x);
+	float3 g2 = grad(hashes.y);
+	float3 g3 = grad(hashes.z);
+	float3 g4 = grad(hashes.w);
+	float4 extrapolations = float4(dot(d1, g1), dot(d2, g2), dot(d3, g3), dot(d4, g4));
+
+	float4x3 derivativeMatrix = { d1, d2, d3, d4 };
+	float4x3 gradientMatrix = { g1, g2, g3, g4 };
+
+	// Derivatives of the noise
+	float3 derivative = -8.0 * mul(aa * a * extrapolations, derivativeMatrix)
+		+ mul(aaaa, gradientMatrix);
+
+	// Return it all as a float4
+	return float4(derivative, dot(aaaa, extrapolations));
+}
+
+// Use this if you don't want Z to look different from X and Y
+float4 openSimplex2SDerivatives_Conventional(float3 X)
+{
+	X = dot(X, float3(2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0)) - X;
+
+	float4 result = openSimplex2SDerivativesPart(X) + openSimplex2SDerivativesPart(X + 144.5);
+
+	return float4(dot(result.xyz, float3(2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0)) - result.xyz, result.w);
+}
+
+// Use this if you want to show X and Y in a plane, then use Z for time, vertical, etc.
+float4 openSimplex2SDerivatives_ImproveXY(float3 X)
+{
+	// Not a skew transform.
+	float3x3 orthonormalMap =
+	{
+		0.788675134594813, -0.211324865405187, -0.577350269189626,
+		-0.211324865405187, 0.788675134594813, -0.577350269189626,
+		0.577350269189626, 0.577350269189626, 0.577350269189626
+	};
+
+	X = mul(X, orthonormalMap);
+	float4 result = openSimplex2SDerivativesPart(X) + openSimplex2SDerivativesPart(X + 144.5);
+
+	return float4(mul(orthonormalMap, result.xyz), result.w);
+}
+
+
+float3 cubic_interp_3d(float3 a, float3 b, float3 c, float3 d, float x)
+{
+	float3 p = -0.5 * a + 1.5 * b - 1.5 * c + 0.5 * d;
+	float3 q = a - 2.5 * b + 2.0 * c - 0.5 * d;
+	float3 r = -0.5 * a + 0.5 * c;
+	
+	return p * x * x * x + q * x * x + r * x + b;
+}
+
+/*
+ *   3D value noise sampling function, using linear temporal
+ *   interpolation
+ */
+float3 value_noise_lt_3d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+	// Linear Interp temporal value
+	float3 c0 = hash33(float3(coord, step));
+	float3 c1 = hash33(float3(coord, step + 1.0f));
+	return lerp(c0, c1, float3(fraction, fraction, fraction));
+}
+
+/*
+ *   3D value noise sampling function, using cubic temporal
+ *   interpolation
+ */
+float3 value_noise_ct_3d(float2 coord, float t)
+{
+	float step = floor(t);
+	float fraction = frac(t);
+
+	// Cubic Interpolated temporal value
+	float3 c0 = hash33(float3(coord, step - 1.0f));
+	float3 c1 = hash33(float3(coord, step));
+	float3 c2 = hash33(float3(coord, step + 1.0f));
+	float3 c3 = hash33(float3(coord, step + 2.0f));
+	return cubic_interp_3d(c0, c1, c2, c3, fraction);
+}
+
+
+float3 block_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = (uv) * uv_size;
+	
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+
+	float hash = hash33(float3(coord, scale.x)).x;
+	float pixel_time = time * (1.0f + hash);
+
+	return value_noise_lt_3d(coord, pixel_time);
+}
+
+float3 linear_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+	//coord -= 0.5;
+	float2 coord_base = floor(coord);
+	float2 coord_frac = frac(coord);
+	
+	float3 c_tl = value_noise_lt_3d(coord_base,                    time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+
+	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
+}
+
+float3 smooth_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+	//coord -= 0.5;
+	float2 coord_base = floor(coord);
+	float2 coord_frac = frac(coord);
+	float3 c_tl = value_noise_lt_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
+	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
+	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
+	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
+
+	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
+	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
+}
+
+float worley_noise(float3 p)
+{
+	float3 base = floor(p);
+	float3 offset = frac(p);
+
+	float value = 1.0;
+	for (int x = -1; x <= 1; x++)
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int t = -1; t <= 1; t++)
+			{
+				float3 shift = float3(x, y, t);
+				float3 pos = hash33(base + shift);
+				float3 delta = shift + pos - offset;
+				value = min(value, length(delta));
+			}
+
+		}
+
+	}
+	return value;
+}
+
+float3 open_simplex_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (2.0 * pixel_size * scale);
+	float4 noise = openSimplex2SDerivatives_ImproveXY(float3(coord, time));
+	return noise.www * 0.5 + 0.5;
+}
+
+float3 worley_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (2.0 * pixel_size * scale);
+	float noise = worley_noise(float3(coord, time));
+	return float3(noise, noise, noise);
+
+}
+
+float3 sample_noise(float2 uv, int i, float2 scale)
+{
+	if (noise_type == 0) {
+		return block_3d(uv, i, scale);
+	} else if (noise_type == 1) {
+		return linear_3d(uv, i, scale);
+	} else if (noise_type == 2) {
+		return smooth_3d(uv, i, scale);
+	} else if (noise_type == 3) {
+		return open_simplex_3d(uv, i, scale);
+	} else if (noise_type == 4) {
+		return worley_3d(uv, i, scale);
+	}
+	return linear_3d(uv, i, scale);
+}
+
+float3 map_basic(float3 c)
+{
+	return pow(c, float3(power, power, power));
+	//return c;
+}
+
+float3 map_billow(float3 c)
+{
+	return pow(abs((c - 0.5) * 2.0), float3(power, power, power));
+}
+
+float3 map_contour(float3 c)
+{
+	c = c * num_contours;
+	float3 fc = frac(c);
+	return pow(fc, float3(power, power, power));
+}
+
+float3 map_noise(float3 c)			  
+{						  
+	c = billow ? map_billow(c) : map_basic(c);
+	return c;
+}
+
+float3 fractal_noise(float2 uv)
+{
+	//return sample_noise(uv, 1.0, float2(1.0, 1.0));
+	float3 result = float3(0.0, 0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float3 c = sample_noise(uv, i, scale);
+		c = map_noise(c);
+		result += c * influence;
+		influence *= sub_influence;
+	}
+	result = result / sum_influence;
+	//return result;
+	result = std_scale * (result - 0.5) + 0.5;
+	return contours ? map_contour(result) : result;
+}
+
+float3 fractal_noise_max(float2 uv)
+{
+	float3 result = float3(0.0, 0.0, 0.0);
+	float influence = 1.0;
+	for (int i = 0; i < layers; i++)
+	{
+		float layer_offset = hash11(float(i));
+		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
+		
+		float3 c = sample_noise(uv, i, scale);
+		c = map_noise(c) * influence;
+		result = max(result, c);
+		influence *= sub_influence;
+	}
+	return result;
+}
+
+
+struct VertData
+{
+	float4 pos : POSITION;
+	float2 uv : TEXCOORD0;
+};

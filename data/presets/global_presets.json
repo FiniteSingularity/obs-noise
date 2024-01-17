@@ -315,5 +315,70 @@
 			}
 
 		}
+	],
+	"displace_presets": [
+		{
+			"name": "Displace Smoke 1",
+			"version": "0.0.2",
+			"settings": {
+				"billow": false,
+				"ridged": false,
+				"layers": 7,
+				"power": 1,
+				"sub_influence": 0.71,
+				"speed": 24.3,
+				"invert": false,
+				"sub_scale_x": 56,
+				"sub_scale_y": 56,
+				"sub_rotation": -39.3,
+				"sub_displace_x": 0.0,
+				"sub_displace_y": 0.0,
+				"brightness": -0.08,
+				"contrast": 0.09,
+				"pixel_width": 256,
+				"pixel_height": 256,
+				"noise_channels": 1,
+				"noise_type": 2,
+				"layer_combo_type": 1,
+				"dw_strength_x": 42,
+				"dw_strength_y": 42,
+				"dw_iterations": 3,
+				"base_rotation": 0.0,
+				"map_color_2": 4278190250,
+				"map_color_1": 4278212095
+			}
+		},
+		{
+			"name": "Displace 60s Wallpaper",
+			"version": "0.0.2",
+			"settings": {
+				"billow": false,
+				"ridged": false,
+				"layers": 3,
+				"power": 1.0,
+				"sub_influence": 0.7,
+				"speed": 0,
+				"invert": false,
+				"sub_scale_x": 56,
+				"sub_scale_y": 56,
+				"sub_rotation": 0.0,
+				"sub_displace_x": 0.0,
+				"sub_displace_y": 0.0,
+				"brightness": 0.0,
+				"contrast": 0.0,
+				"pixel_width": 64.0,
+				"pixel_height": 64.0,
+				"noise_channels": 0,
+				"noise_type": 0,
+				"layer_combo_type": 1,
+				"dw_strength_x": 25.0,
+				"dw_strength_y": 25.0,
+				"dw_iterations": 0,
+				"base_rotation": 0.0,
+				"map_color_2": 4280127217,
+				"map_color_1": 4280098237
+			}
+
+		}
 	]
 }

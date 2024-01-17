@@ -1,6 +1,7 @@
 uniform float4x4 ViewProj;
 uniform float2 uv_size;
 uniform float global_rotation;
+uniform float2 global_offset;
 uniform float2 pixel_size;
 uniform float2 sub_scaling;
 uniform float2 sub_displace;
@@ -19,258 +20,14 @@ uniform float brightness;
 
 uniform bool billow;
 uniform bool ridged;
+uniform bool contours;
+uniform float num_contours;
 uniform float power;
 
 uniform int dw_iterations;
 uniform float2 dw_strength;
 
-sampler_state textureSampler{
-    Filter = Linear;
-    AddressU = Clamp;
-    AddressV = Clamp;
-    MinLOD = 0;
-    MaxLOD = 0;
-};
-
-
-float2 transform(float2 uv_in, float2 shift, float rot)
-{
-	uv_in -= shift;
-	uv_in = uv_in * uv_size;
-	uv_in = float2(uv_in.x * cos(rot) - uv_in.y * sin(rot), uv_in.x * sin(rot) + uv_in.y * cos(rot));
-	uv_in = uv_in / uv_size;
-	uv_in += shift;
-	return uv_in;
-}
-
-float4 adjustments(float4 color, float b, float c)
-{
-	// Calculate Contrast Value
-	float ca = c < 0.0f ? 1.0f / (-c + 1.0f) : (c + 1.0f);
-
-	float3 col = float3(
-		ca * color.r + b,
-		ca * color.g + b,
-		ca * color.b + b
-	);
-	if (ridged) {
-		col = 1.0 - col;
-	}
-	return float4(col, color.a);
-}
-
-// pcg33
-uint3 pcg3d(uint3 v)
-{
-
-	v = v * 1664525u + 1013904223u;
-
-	v.x += v.y * v.z;
-	v.y += v.z * v.x;
-	v.z += v.x * v.y;
-
-	v ^= v >> 16u;
-
-	v.x += v.y * v.z;
-	v.y += v.z * v.x;
-	v.z += v.x * v.y;
-
-	return v;
-}
-
-uint pcg(uint v)
-{
-	uint state = v * 747796405u + 2891336453u;
-	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-	return (word >> 22u) ^ word;
-}
-
-
-// 3 outputs, 3 inputs
-float3 hash33(float3 src)
-{
-	uint3 u = uint3(src + 8000000.0f);
-	return float3(pcg3d(u)) * (1.0 / float(0xffffffffu));
-}
-
-// 1 input, 1 output
-float hash11(float src)
-{
-	return float(pcg(uint(src)) * 1.0 / float(0xffffffffu));
-}
-
-float3 cubic_interp_3d(float3 a, float3 b, float3 c, float3 d, float x)
-{
-	float3 p = -0.5 * a + 1.5 * b - 1.5 * c + 0.5 * d;
-	float3 q = a - 2.5 * b + 2.0 * c - 0.5 * d;
-	float3 r = -0.5 * a + 0.5 * c;
-	
-	return p * x * x * x + q * x * x + r * x + b;
-}
-
-/*
- *   3D value noise sampling function, using linear temporal
- *   interpolation
- */
-float3 value_noise_lt_3d(float2 coord, float t)
-{
-	float step = floor(t);
-	float fraction = frac(t);
-	// Linear Interp temporal value
-	float3 c0 = hash33(float3(coord, step));
-	float3 c1 = hash33(float3(coord, step + 1.0f));
-	return lerp(c0, c1, float3(fraction, fraction, fraction));
-}
-
-/*
- *   3D value noise sampling function, using cubic temporal
- *   interpolation
- */
-float3 value_noise_ct_3d(float2 coord, float t)
-{
-	float step = floor(t);
-	float fraction = frac(t);
-
-	// Cubic Interpolated temporal value
-	float3 c0 = hash33(float3(coord, step - 1.0f));
-	float3 c1 = hash33(float3(coord, step));
-	float3 c2 = hash33(float3(coord, step + 1.0f));
-	float3 c3 = hash33(float3(coord, step + 2.0f));
-	return cubic_interp_3d(c0, c1, c2, c3, fraction);
-}
-
-
-float3 block_3d(float2 uv, int i, float2 scale)
-{
-	float theta = float(i) * sub_rotation;
-	uv = transform(uv, float2(0.5, 0.5), theta);
-
-	float2 displacement = float(i) * sub_displace;
-	float2 coord = (uv) * uv_size;
-	
-	coord += displacement;
-	coord *= 1.0 / (pixel_size * scale);
-
-	float hash = hash33(float3(coord, scale.x)).x;
-	float pixel_time = time * (1.0f + hash);
-
-	return value_noise_lt_3d(coord, pixel_time);
-}
-
-float3 linear_3d(float2 uv, int i, float2 scale)
-{
-	float theta = float(i) * sub_rotation;
-	uv = transform(uv, float2(0.5, 0.5), theta);
-	
-	float2 displacement = float(i) * sub_displace;
-	float2 coord = uv * uv_size;
-	coord += displacement;
-	coord *= 1.0 / (pixel_size * scale);
-	//coord -= 0.5;
-	float2 coord_base = floor(coord);
-	float2 coord_frac = frac(coord);
-	
-	float3 c_tl = value_noise_lt_3d(coord_base,                    time * (1.0f + hash33(float3(coord_base, scale.x)).x));
-	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
-	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
-	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
-
-	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
-	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
-	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
-}
-
-float3 smooth_3d(float2 uv, int i, float2 scale)
-{
-	float theta = float(i) * sub_rotation;
-	uv = transform(uv, float2(0.5, 0.5), theta);
-	
-	float2 displacement = float(i) * sub_displace;
-	float2 coord = uv * uv_size;
-	coord += displacement;
-	coord *= 1.0 / (pixel_size * scale);
-	//coord -= 0.5;
-	float2 coord_base = floor(coord);
-	float2 coord_frac = frac(coord);
-	float3 c_tl = value_noise_lt_3d(coord_base, time * (1.0f + hash33(float3(coord_base, scale.x)).x));
-	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 0.0), scale.x)).x));
-	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(0.0, 1.0), scale.x)).x));
-	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash33(float3(coord_base + float2(1.0, 1.0), scale.x)).x));
-
-	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
-	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
-	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
-	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
-}
-
-float3 sample_noise(float2 uv, int i, float2 scale)
-{
-	if (noise_type == 0) {
-		return block_3d(uv, i, scale);
-	} else if (noise_type == 1) {
-		return linear_3d(uv, i, scale);
-	} else if (noise_type == 2) {
-		return smooth_3d(uv, i, scale);
-	}
-	return linear_3d(uv, i, scale);	
-}
-
-float3 map_basic(float3 c)
-{
-	return pow(c, float3(power, power, power));
-	//return c;
-}
-
-float3 map_billow(float3 c)
-{
-	return pow(abs((c - 0.5) * 2.0), float3(power, power, power));
-}
-
-float3 map_noise(float3 c)
-{
-	return billow ? map_billow(c) : map_basic(c);
-}
-
-float3 fractal_noise(float2 uv)
-{
-	float3 output = float3(0.0, 0.0, 0.0);
-	float influence = 1.0;
-	for (int i = 0; i < layers; i++)
-	{
-		float layer_offset = hash11(float(i));
-		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
-		
-		float3 c = sample_noise(uv, i, scale);
-		c = map_noise(c);
-		output += c * influence;
-		influence *= sub_influence;
-	}
-	output = output / sum_influence;
-	return std_scale * (output - 0.5) + 0.5;
-}
-
-float3 fractal_noise_max(float2 uv)
-{
-	float3 output = float3(0.0, 0.0, 0.0);
-	float influence = 1.0;
-	for (int i = 0; i < layers; i++)
-	{
-		float layer_offset = hash11(float(i));
-		float2 scale = pow(sub_scaling, float2(float(i), float(i)));
-		
-		float3 c = sample_noise(uv, i, scale);
-		c = map_noise(c) * influence;
-		output = max(output, c);
-		influence *= sub_influence;
-	}
-	return output;
-}
-
-struct VertData
-{
-	float4 pos : POSITION;
-	float2 uv : TEXCOORD0;
-};
+#include "noise_functions.effect"
 
 VertData mainTransform(VertData v_in)
 {
@@ -280,98 +37,113 @@ VertData mainTransform(VertData v_in)
 
 float4 mainImage3(VertData v_in) : TARGET
 {
-	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise(uv);
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(output, 1.0), brightness, contrast);
+	return adjustments(float4(value, 1.0), brightness, contrast);
 }
 
 float4 mainImageMax3(VertData v_in) : TARGET
 {
-	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise_max(uv);
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise_max(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		output = fractal_noise_max(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(output, 1.0), brightness, contrast);
+	return adjustments(float4(value, 1.0), brightness, contrast);
 }
 
 float4 mainImage2(VertData v_in) : TARGET
 {
-	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise(uv);
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(output.xy, 0.0, 1.0), brightness, contrast);
+	return adjustments(float4(value.xy, 0.0, 1.0), brightness, contrast);
 }
 
 float4 mainImageMax2(VertData v_in) : TARGET
 {
-	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise_max(uv);
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise_max(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		output = fractal_noise_max(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(output.xy, 0.0, 1.0), brightness, contrast);
+	return adjustments(float4(value.xy, 0.0, 1.0), brightness, contrast);
 }
 
 
 float4 mainImage1(VertData v_in) : TARGET
 {
-	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise(uv);
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
-	for (int i = 0; i < dw_iterations; i++) {
-		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(output.x, output.x, output.x, 1.0), brightness, contrast);
+	return adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
+}
+
+float4 mainImageMax1(VertData v_in) : TARGET
+{
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise_max(uv);
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+	return adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
 }
 
 float4 mainImageColorMap(VertData v_in) : TARGET
 {
-	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise(uv);
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		output = fractal_noise(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	output = adjustments(float4(output.x, output.x, output.x, 1.0), brightness, contrast);
+	value = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
 
-	return lerp(color_1, color_2, float4(output.x, output.x, output.x, output.x));
+	return lerp(color_1, color_2, float4(value.x, value.x, value.x, value.x));
 }
 
 
-float4 mainImageMax1(VertData v_in) : TARGET
+float4 mainImageColorMapMax(VertData v_in) : TARGET
 {
-	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 output = fractal_noise_max(uv);
+	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float3 value = fractal_noise_max(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		output = fractal_noise_max(uv + dw_strength * 2.0f * (output.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(output.x, output.x, output.x, 1.0), brightness, contrast);
-}
+	value = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
 
+	return lerp(color_1, color_2, float4(value.x, value.x, value.x, value.x));
+}
 
 technique Draw3
 {
@@ -406,6 +178,15 @@ technique Draw0
 	{
 		vertex_shader = mainTransform(v_in);
 		pixel_shader = mainImageColorMap(v_in);
+	}
+}
+
+technique Draw0Max
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImageColorMapMax(v_in);
 	}
 }
 
