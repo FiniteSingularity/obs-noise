@@ -6,7 +6,6 @@ sampler_state textureSampler{
     MaxLOD = 0;
 };
 
-
 float2 global_transform(float2 uv_in, float2 shift, float rot)
 {
 	uv_in -= shift;
@@ -43,11 +42,15 @@ float4 adjustments(float4 color, float b, float c)
 	{
 		col = 1.0 - col;
 	}
-	return float4(col, color.a);
+	return float4(col.r, col.g, col.b, color.a);
 }
 
 // pcg44
+#ifdef OPENGL
+uvec4 pcg4d(uvec4 v)
+#else
 uint4 pcg4d(uint4 v)
+#endif
 {
 	v = v * 1664525u + 1013904223u;
     
@@ -67,7 +70,11 @@ uint4 pcg4d(uint4 v)
 }
 
 // pcg33
+#ifdef OPENGL
+uvec3 pcg3d(uvec3 v)
+#else
 uint3 pcg3d(uint3 v)
+#endif
 {
 
 	v = v * 1664525u + 1013904223u;
@@ -94,14 +101,22 @@ uint pcg(uint v)
 
 float4 hash44(float4 src)
 {
+#ifdef OPENGL
+	uvec4 u = uvec4(src + 8000000.0f);
+#else
 	uint4 u = uint4(src + 8000000.0f);
+#endif
 	return float4(pcg4d(u)) * (1.0 / float(0xffffffffu));
 }
 
 // 3 outputs, 3 inputs
 float3 hash33(float3 src)
 {
+#ifdef OPENGL
+	uvec3 u = uvec3(src + 8000000.0f);
+#else
 	uint3 u = uint3(src + 8000000.0f);
+#endif
 	return float3(pcg3d(u)) * (1.0 / float(0xffffffffu));
 }
 
@@ -115,11 +130,13 @@ float hash11(float src)
 //////////////////// Output: float4(dF/dx, dF/dy, dF/dz, value) ////////////////////
 
 // Borrowed from Stefan Gustavson's noise code
+
 float4 permute(float4 t)
 {
 	return t * (t * 34.0 + 133.0);
 }
 
+#ifndef OPENGL
 float mod(float x, float y)
 {
 	return x - y * floor(x / y);
@@ -139,6 +156,7 @@ float4 mod4(float4 x, float4 y)
 {
 	return x - y * floor(x / y);
 }
+#endif
 
 // Gradient set is a normalized expanded rhombic dodecahedron
 float3 grad(float hash)
@@ -188,10 +206,6 @@ float4 openSimplex2SDerivativesPart(float3 X)
 	float3 v4 = b + float3(0, 0, 1) + float3(1, 1, -1) * floor(dot(i4, float4(.25, .25, -.25, .35)));
 
 	// Gradient hashes for the four vertices in this half-lattice.
-	//float4 hashes = permute(mod4(float4(v1.x, v2.x, v3.x, v4.x), float4(289.0, 289.0, 289.0, 289.0)));
-	//hashes = permute(mod4(hashes + float4(v1.y, v2.y, v3.y, v4.y), float4(289.0, 289.0, 289.0, 289.0)));
-	//hashes = mod4(permute(mod4(hashes + float4(v1.z, v2.z, v3.z, v4.z), float4(289.0, 289.0, 289.0, 289.0))), float4(48.0, 48.0, 48.0, 48.0));
-
 	float4 hashes = float4(
 		hash33(v1).x, hash33(v2).x, hash33(v3).x, hash33(v4).x
 	) * 47.0;
@@ -211,6 +225,7 @@ float4 openSimplex2SDerivativesPart(float3 X)
 	float3 g4 = grad(hashes.w);
 	float4 extrapolations = float4(dot(d1, g1), dot(d2, g2), dot(d3, g3), dot(d4, g4));
 
+#ifndef OPENGL
 	float4x3 derivativeMatrix = { d1, d2, d3, d4 };
 	float4x3 gradientMatrix = { g1, g2, g3, g4 };
 
@@ -218,6 +233,10 @@ float4 openSimplex2SDerivativesPart(float3 X)
 	float3 derivative = -8.0 * mul(aa * a * extrapolations, derivativeMatrix)
 		+ mul(aaaa, gradientMatrix);
 
+#else
+	vec3 derivative = -8.0 * mat4x3(d1, d2, d3, d4) * (aa * a * extrapolations) + mat4x3(g1, g2, g3, g4) * aaaa;
+#endif
+	
 	// Return it all as a float4
 	return float4(derivative, dot(aaaa, extrapolations));
 }
@@ -235,6 +254,7 @@ float4 openSimplex2SDerivatives_Conventional(float3 X)
 // Use this if you want to show X and Y in a plane, then use Z for time, vertical, etc.
 float4 openSimplex2SDerivatives_ImproveXY(float3 X)
 {
+#ifndef OPENGL
 	// Not a skew transform.
 	float3x3 orthonormalMap =
 	{
@@ -242,13 +262,22 @@ float4 openSimplex2SDerivatives_ImproveXY(float3 X)
 		-0.211324865405187, 0.788675134594813, -0.577350269189626,
 		0.577350269189626, 0.577350269189626, 0.577350269189626
 	};
-
+	
 	X = mul(X, orthonormalMap);
 	float4 result = openSimplex2SDerivativesPart(X) + openSimplex2SDerivativesPart(X + 144.5);
-
 	return float4(mul(orthonormalMap, result.xyz), result.w);
-}
+#else
+	mat3 orthonormalMap = mat3(
+		0.788675134594813, -0.211324865405187, -0.577350269189626,
+		-0.211324865405187, 0.788675134594813, -0.577350269189626,
+		0.577350269189626, 0.577350269189626, 0.577350269189626);
+    
+	X = orthonormalMap * X;
+	float4 result = openSimplex2SDerivativesPart(X) + openSimplex2SDerivativesPart(X + 144.5);
 
+	return vec4(result.xyz * orthonormalMap, result.w);
+#endif
+}
 
 float3 cubic_interp_3d(float3 a, float3 b, float3 c, float3 d, float x)
 {

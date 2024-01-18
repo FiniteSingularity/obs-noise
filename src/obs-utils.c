@@ -60,18 +60,24 @@ gs_effect_t *load_shader_effect(gs_effect_t *effect,
 		effect = NULL;
 		obs_leave_graphics();
 	}
-	char *shader_text = NULL;
 	struct dstr filename = {0};
 	dstr_cat(&filename, obs_get_module_data_path(obs_current_module()));
 	dstr_cat(&filename, effect_file_path);
-	shader_text = load_shader_from_file(filename.array);
+	struct dstr shader_text = {0};
+	char *file_contents = load_shader_from_file(filename.array);
+	dstr_cat(&shader_text, file_contents);
 	char *errors = NULL;
+	bfree(file_contents);
 
 	obs_enter_graphics();
-	effect = gs_effect_create(shader_text, NULL, &errors);
+	int device_type = gs_get_device_type();
+	if (device_type == GS_DEVICE_OPENGL) {
+		dstr_insert(&shader_text, 0, "#define OPENGL 1\n");
+	}
+	effect = gs_effect_create(shader_text.array, NULL, &errors);
 	obs_leave_graphics();
 
-	bfree(shader_text);
+	dstr_free(&shader_text);
 
 	if (effect == NULL) {
 		blog(LOG_WARNING,
