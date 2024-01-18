@@ -124,9 +124,9 @@ float4 mainImageColorMap(VertData v_in) : TARGET
 		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	value = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
+	float c = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast).x;
 
-	return lerp(color_1, color_2, float4(value.x, value.x, value.x, value.x));
+	return lerp(color_1, color_2, float4(c, c, c, c));
 }
 
 
@@ -140,9 +140,9 @@ float4 mainImageColorMapMax(VertData v_in) : TARGET
 		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	value = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
+	float c = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast).x;
 
-	return lerp(color_1, color_2, float4(value.x, value.x, value.x, value.x));
+	return lerp(color_1, color_2, float4(c, c, c, c));
 }
 
 technique Draw3
