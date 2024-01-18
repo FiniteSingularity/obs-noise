@@ -46,7 +46,11 @@ float4 adjustments(float4 color, float b, float c)
 }
 
 // pcg44
+#ifdef OPENGL
+uvec4 pcg4d(uvec4 v)
+#else
 uint4 pcg4d(uint4 v)
+#endif
 {
 	v = v * 1664525u + 1013904223u;
     
@@ -66,7 +70,11 @@ uint4 pcg4d(uint4 v)
 }
 
 // pcg33
+#ifdef OPENGL
+uvec3 pcg3d(uvec3 v)
+#else
 uint3 pcg3d(uint3 v)
+#endif
 {
 
 	v = v * 1664525u + 1013904223u;
@@ -93,14 +101,22 @@ uint pcg(uint v)
 
 float4 hash44(float4 src)
 {
+#ifdef OPENGL
+	uvec4 u = uvec4(src + 8000000.0f);
+#else
 	uint4 u = uint4(src + 8000000.0f);
+#endif
 	return float4(pcg4d(u)) * (1.0 / float(0xffffffffu));
 }
 
 // 3 outputs, 3 inputs
 float3 hash33(float3 src)
 {
+#ifdef OPENGL
+	uvec3 u = uvec3(src + 8000000.0f);
+#else
 	uint3 u = uint3(src + 8000000.0f);
+#endif
 	return float3(pcg3d(u)) * (1.0 / float(0xffffffffu));
 }
 
