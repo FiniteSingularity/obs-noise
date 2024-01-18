@@ -51,7 +51,7 @@ float4 mainImage(VertData v_in) : TARGET
 	}
 
 	// 3. Prepare and return pixel value
-	value.rgb = adjustments(float4(value, 1.0), brightness, contrast);
+	value.rgb = adjustments(float4(value, 1.0), brightness, contrast).rgb;
 	// Scale 0-1 value to -1 to 1, then multiple by displace scale 
 	float2 offset = 2.0 * (value.rg - 0.5) * displace_scale;
 	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
@@ -71,7 +71,7 @@ float4 mainImageMax(VertData v_in) : TARGET
 	}
 
 	// 3. Prepare and return pixel value
-	value.rgb = adjustments(float4(value, 1.0), brightness, contrast);
+	value.rgb = adjustments(float4(value, 1.0), brightness, contrast).rgb;
 	// Scale 0-1 value to -1 to 1, then multiple by displace scale 
 	float2 offset = 2.0 * (value.rg - 0.5) * displace_scale;
 	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
