@@ -1,0 +1,69 @@
+float3 map_basic3(float3 c)
+{
+    // Set power to be float3 in c if 3d noise.
+	return pow(c, float3(power, power, power));
+}
+
+float2 map_basic2(float2 c)
+{
+	return pow(c, float2(power, power));
+}
+
+float map_basic1(float c)
+{
+	return pow(c, power);
+}
+
+float3 map_billow3(float3 c)
+{
+	return pow(abs((c - 0.5) * 2.0), float3(power, power, power));
+}
+
+float2 map_billow2(float2 c)
+{
+	return pow(abs((c - 0.5) * 2.0), float2(power, power));
+}
+
+float map_billow1(float c)
+{
+	return pow(abs((c - 0.5) * 2.0), power);
+}
+
+float3 map_contour3(float3 c)
+{
+	c = c * num_contours;
+	float3 fc = frac(c);
+	return pow(fc, float3(power, power, power));
+}
+
+float2 map_contour2(float2 c)
+{
+	c = c * num_contours;
+	float2 fc = frac(c);
+	return pow(fc, float2(power, power));
+}
+
+float map_contour1(float c)
+{
+	c = c * num_contours;
+	float fc = frac(c);
+	return pow(fc, power);
+}
+
+float3 map_noise3(float3 c)			  
+{						  
+	c = billow ? map_billow3(c) : map_basic3(c);
+	return c;
+}
+
+float2 map_noise2(float2 c)			  
+{						  
+	c = billow ? map_billow2(c) : map_basic2(c);
+	return c;
+}
+
+float map_noise1(float c)			  
+{						  
+	c = billow ? map_billow1(c) : map_basic1(c);
+	return c;
+}

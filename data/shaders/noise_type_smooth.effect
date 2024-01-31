@@ -1,0 +1,69 @@
+
+float3 smooth_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+	//coord -= 0.5;
+	float2 coord_base = floor(coord);
+	float2 coord_frac = frac(coord);
+	float3 c_tl = value_noise_lt_3d(coord_base, time * (1.0f + hash31(float3(coord_base, scale.x))));
+	float3 c_tr = value_noise_lt_3d(coord_base + float2(1.0, 0.0), time * (1.0f + hash31(float3(coord_base + float2(1.0, 0.0), scale.x))));
+	float3 c_bl = value_noise_lt_3d(coord_base + float2(0.0, 1.0), time * (1.0f + hash31(float3(coord_base + float2(0.0, 1.0), scale.x))));
+	float3 c_br = value_noise_lt_3d(coord_base + float2(1.0, 1.0), time * (1.0f + hash31(float3(coord_base + float2(1.0, 1.0), scale.x))));
+
+	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
+	float3 th = lerp(c_tl, c_tr, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	float3 bh = lerp(c_bl, c_br, float3(coord_frac.x, coord_frac.x, coord_frac.x));
+	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
+}
+
+float2 smooth_2d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+	//coord -= 0.5;
+	float2 coord_base = floor(coord);
+	float2 coord_frac = frac(coord);
+	float2 c_tl = value_noise_lt_2d(coord_base, time * (1.0f + hash31(float3(coord_base, scale.x))));
+	float2 c_tr = value_noise_lt_2d(coord_base + float2(1.0, 0.0), time * (1.0f + hash31(float3(coord_base + float2(1.0, 0.0), scale.x))));
+	float2 c_bl = value_noise_lt_2d(coord_base + float2(0.0, 1.0), time * (1.0f + hash31(float3(coord_base + float2(0.0, 1.0), scale.x))));
+	float2 c_br = value_noise_lt_2d(coord_base + float2(1.0, 1.0), time * (1.0f + hash31(float3(coord_base + float2(1.0, 1.0), scale.x))));
+
+	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
+	float2 th = lerp(c_tl, c_tr, float2(coord_frac.x, coord_frac.x));
+	float2 bh = lerp(c_bl, c_br, float2(coord_frac.x, coord_frac.x));
+	return lerp(th, bh, float2(coord_frac.y, coord_frac.y));
+}
+
+float smooth_1d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+	//coord -= 0.5;
+	float2 coord_base = floor(coord);
+	float2 coord_frac = frac(coord);
+	float c_tl = value_noise_lt_1d(coord_base, time * (1.0f + hash31(float3(coord_base, scale.x))));
+	float c_tr = value_noise_lt_1d(coord_base + float2(1.0, 0.0), time * (1.0f + hash31(float3(coord_base + float2(1.0, 0.0), scale.x))));
+	float c_bl = value_noise_lt_1d(coord_base + float2(0.0, 1.0), time * (1.0f + hash31(float3(coord_base + float2(0.0, 1.0), scale.x))));
+	float c_br = value_noise_lt_1d(coord_base + float2(1.0, 1.0), time * (1.0f + hash31(float3(coord_base + float2(1.0, 1.0), scale.x))));
+
+	coord_frac = smoothstep(float2(0.0, 0.0), float2(1.0, 1.0), coord_frac);
+	float th = lerp(c_tl, c_tr, coord_frac.x);
+	float bh = lerp(c_bl, c_br, coord_frac.x);
+	return lerp(th, bh, coord_frac.y);
+}

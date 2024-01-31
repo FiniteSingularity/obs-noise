@@ -1,3 +1,15 @@
+#define SAMPLE_NOISE_1D(uv, i, scale) block_1d(uv, i, scale)
+#define SAMPLE_NOISE_2D(uv, i, scale) block_2d(uv, i, scale)
+#define SAMPLE_NOISE_3D(uv, i, scale) block_3d(uv, i, scale)
+
+#define MAP_NOISE_1D(c) map_basic1(c)
+#define MAP_NOISE_2D(c) map_basic2(c)
+#define MAP_NOISE_3D(c) map_basic3(c)
+
+#define CONTOURS_1D(result) result
+#define CONTOURS_2D(result) result
+#define CONTOURS_3D(result) result
+
 uniform float4x4 ViewProj;
 uniform float2 uv_size;
 uniform float global_rotation;
@@ -27,6 +39,7 @@ uniform float power;
 uniform int dw_iterations;
 uniform float2 dw_strength;
 
+#include "utilities.effect"
 #include "noise_functions.effect"
 
 VertData mainTransform(VertData v_in)
@@ -38,11 +51,11 @@ VertData mainTransform(VertData v_in)
 float4 mainImage3(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise(uv);
+	float3 value = fractal_noise_3d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_3d(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
 	return adjustments(float4(value, 1.0), brightness, contrast);
@@ -51,11 +64,11 @@ float4 mainImage3(VertData v_in) : TARGET
 float4 mainImageMax3(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise_max(uv);
+	float3 value = fractal_noise_max_3d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max_3d(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
 	return adjustments(float4(value, 1.0), brightness, contrast);
@@ -64,67 +77,67 @@ float4 mainImageMax3(VertData v_in) : TARGET
 float4 mainImage2(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise(uv);
+	float2 value = fractal_noise_2d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_2d(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(value.xy, 0.0, 1.0), brightness, contrast);
+	return adjustments(float4(value, 0.0, 1.0), brightness, contrast);
 }
 
 float4 mainImageMax2(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise_max(uv);
+	float2 value = fractal_noise_max_2d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max_2d(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(value.xy, 0.0, 1.0), brightness, contrast);
+	return adjustments(float4(value, 0.0, 1.0), brightness, contrast);
 }
 
 
 float4 mainImage1(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise(uv);
+	float value = fractal_noise_1d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
+	return adjustments(float4(value, value, value, 1.0), brightness, contrast);
 }
 
 float4 mainImageMax1(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise_max(uv);
+	float value = fractal_noise_max_1d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast);
+	return adjustments(float4(value, value, value, 1.0), brightness, contrast);
 }
 
 float4 mainImageColorMap(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise(uv);
+	float value = fractal_noise_1d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	float c = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast).x;
+	float c = adjustments(float4(value, value, value, 1.0), brightness, contrast).x;
 
 	return lerp(color_1, color_2, float4(c, c, c, c));
 }
@@ -133,14 +146,14 @@ float4 mainImageColorMap(VertData v_in) : TARGET
 float4 mainImageColorMapMax(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float3 value = fractal_noise_max(uv);
+	float value = fractal_noise_max_1d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_max(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	float c = adjustments(float4(value.x, value.x, value.x, 1.0), brightness, contrast).x;
+	float c = adjustments(float4(value, value, value, 1.0), brightness, contrast).x;
 
 	return lerp(color_1, color_2, float4(c, c, c, c));
 }

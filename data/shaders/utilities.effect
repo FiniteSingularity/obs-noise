@@ -1,0 +1,52 @@
+sampler_state textureSampler{
+    Filter = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+    MinLOD = 0;
+    MaxLOD = 0;
+};
+
+struct VertData
+{
+	float4 pos : POSITION;
+	float2 uv : TEXCOORD0;
+};
+
+
+float2 global_transform(float2 uv_in, float2 shift, float rot)
+{
+	uv_in -= shift;
+	uv_in = uv_in * uv_size;
+	uv_in += global_offset;
+	uv_in = float2(uv_in.x * cos(rot) - uv_in.y * sin(rot), uv_in.x * sin(rot) + uv_in.y * cos(rot));
+	uv_in = uv_in / uv_size;
+	uv_in += shift;
+	return uv_in;
+}
+
+float2 transform(float2 uv_in, float2 shift, float rot)
+{
+	uv_in -= shift;
+	uv_in = uv_in * uv_size;
+	uv_in = float2(uv_in.x * cos(rot) - uv_in.y * sin(rot), uv_in.x * sin(rot) + uv_in.y * cos(rot));
+	uv_in = uv_in / uv_size;
+	uv_in += shift;
+	return uv_in;
+}
+
+float4 adjustments(float4 color, float b, float c)
+{
+	// Calculate Contrast Value
+	float ca = c < 0.0f ? 1.0f / (-c + 1.0f) : (c + 1.0f);
+
+	float3 col = float3(
+		ca * color.r + b,
+		ca * color.g + b,
+		ca * color.b + b
+	);
+	if (ridged)
+	{
+		col = 1.0 - col;
+	}
+	return float4(col.r, col.g, col.b, color.a);
+}
