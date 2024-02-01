@@ -45,6 +45,11 @@
 #define NOISE_CHANNELS_COLOR_MAP 0
 #define NOISE_CHANNELS_COLOR_MAP_LABEL "Noise.Channels.ColorMap"
 
+#define NOISE_QUALITY_FAST 0
+#define NOISE_QUALITY_FAST_LABEL "Noise.Quality.Fast"
+#define NOISE_QUALITY_HIGH 1
+#define NOISE_QUALITY_HIGH_LABEL "Noise.Quality.HighQuality"
+
 struct noise_data;
 typedef struct noise_data noise_data_t;
 
@@ -67,6 +72,8 @@ struct noise_data {
 	bool is_filter;
 
 	uint32_t channels;
+
+	uint32_t quality;
 
 	struct vec4 map_color_1;
 	struct vec4 map_color_2;
@@ -139,4 +146,7 @@ struct noise_data {
 	uint32_t width;
 	uint32_t height;
 	struct vec2 uv_size;
+
+	bool loading_effect;
+	bool reload_effect;
 };

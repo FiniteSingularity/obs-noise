@@ -64,6 +64,6 @@ float2 linear_1d(float2 uv, int i, float2 scale)
 	float c_br = value_noise_lt_1d(coord_base + float2(1.0, 1.0), time * (1.0f + hash31(float3(coord_base + float2(1.0, 1.0), scale.x))));
 
 	float th = lerp(c_tl, c_tr, coord_frac.x);
-	float bh = lerp(c_bl, c_br, coord_frac.x, coord_frac.x);
+	float bh = lerp(c_bl, c_br, coord_frac.x);
 	return lerp(th, bh, coord_frac.y);
 }

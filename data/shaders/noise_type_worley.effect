@@ -33,3 +33,27 @@ float worley_1d(float2 uv, int i, float2 scale)
 	coord *= 1.0 / (2.0 * pixel_size * scale);
 	return worley_noise(float3(coord, time));
 }
+
+float2 worley_2d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (2.0 * pixel_size * scale);
+	float c = worley_noise(float3(coord, time));
+	return float2(c, c);
+}
+
+float3 worley_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = uv * uv_size;
+	coord += displacement;
+	coord *= 1.0 / (2.0 * pixel_size * scale);
+	float c = worley_noise(float3(coord, time));
+	return float3(c, c, c);
+}

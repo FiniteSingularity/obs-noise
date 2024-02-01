@@ -1,14 +1,14 @@
-#define SAMPLE_NOISE_1D(uv, i, scale) block_1d(uv, i, scale)
-#define SAMPLE_NOISE_2D(uv, i, scale) block_2d(uv, i, scale)
-#define SAMPLE_NOISE_3D(uv, i, scale) block_3d(uv, i, scale)
+#define SAMPLE_NOISE_1D(uv, i, scale) <NOISE_TYPE>_1d(uv, i, scale)
+#define SAMPLE_NOISE_2D(uv, i, scale) <NOISE_TYPE>_2d(uv, i, scale)
+#define SAMPLE_NOISE_3D(uv, i, scale) <NOISE_TYPE>_3d(uv, i, scale)
 
-#define MAP_NOISE_1D(c) map_basic1(c)
-#define MAP_NOISE_2D(c) map_basic2(c)
-#define MAP_NOISE_3D(c) map_basic3(c)
+#define MAP_NOISE_1D(c) <NOISE_MAP_TYPE>1(c)
+#define MAP_NOISE_2D(c) <NOISE_MAP_TYPE>2(c)
+#define MAP_NOISE_3D(c) <NOISE_MAP_TYPE>3(c)
 
-#define CONTOURS_1D(result) result
-#define CONTOURS_2D(result) result
-#define CONTOURS_3D(result) result
+#define CONTOURS_1D(result) <CONTOUR_1>
+#define CONTOURS_2D(result) <CONTOUR_2>
+#define CONTOURS_3D(result) <CONTOUR_3>
 
 uniform float4x4 ViewProj;
 uniform float2 uv_size;
@@ -39,6 +39,7 @@ uniform float power;
 uniform int dw_iterations;
 uniform float2 dw_strength;
 
+<HASH_FUNCTIONS>
 #include "utilities.effect"
 #include "noise_functions.effect"
 
@@ -104,40 +105,40 @@ float4 mainImageMax2(VertData v_in) : TARGET
 float4 mainImage1(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float value = fractal_noise_1d(uv);
+	float2 value = fractal_noise_2d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_2d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(value, value, value, 1.0), brightness, contrast);
+	return adjustments(float4(value.xxx, 1.0), brightness, contrast);
 }
 
 float4 mainImageMax1(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float value = fractal_noise_max_1d(uv);
+	float value = fractal_noise_max_2d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_max_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max_2d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	return adjustments(float4(value, value, value, 1.0), brightness, contrast);
+	return adjustments(float4(value.xxx, 1.0), brightness, contrast);
 }
 
 float4 mainImageColorMap(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float value = fractal_noise_1d(uv);
+	float2 value = fractal_noise_2d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_2d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	float c = adjustments(float4(value, value, value, 1.0), brightness, contrast).x;
+	float c = adjustments(float4(value.xxx, 1.0), brightness, contrast).x;
 
 	return lerp(color_1, color_2, float4(c, c, c, c));
 }
@@ -146,14 +147,14 @@ float4 mainImageColorMap(VertData v_in) : TARGET
 float4 mainImageColorMapMax(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float value = fractal_noise_max_1d(uv);
+	float2 value = fractal_noise_max_2d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
-		value = fractal_noise_max_1d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
+		value = fractal_noise_max_2d(uv + dw_strength * 2.0f * (value - 0.5f) / uv_size + dw_shift);
 		dw_shift += 10.0f;
 	}
-	float c = adjustments(float4(value, value, value, 1.0), brightness, contrast).x;
+	float c = adjustments(float4(value.xxx, 1.0), brightness, contrast).x;
 
 	return lerp(color_1, color_2, float4(c, c, c, c));
 }

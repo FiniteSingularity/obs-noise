@@ -1,5 +1,5 @@
 
-float3 smooth_3d(float2 uv, int i, float2 scale)
+float3 smoothstep_3d(float2 uv, int i, float2 scale)
 {
 	float theta = float(i) * sub_rotation;
 	uv = transform(uv, float2(0.5, 0.5), theta);
@@ -22,7 +22,7 @@ float3 smooth_3d(float2 uv, int i, float2 scale)
 	return lerp(th, bh, float3(coord_frac.y, coord_frac.y, coord_frac.y));
 }
 
-float2 smooth_2d(float2 uv, int i, float2 scale)
+float2 smoothstep_2d(float2 uv, int i, float2 scale)
 {
 	float theta = float(i) * sub_rotation;
 	uv = transform(uv, float2(0.5, 0.5), theta);
@@ -45,7 +45,7 @@ float2 smooth_2d(float2 uv, int i, float2 scale)
 	return lerp(th, bh, float2(coord_frac.y, coord_frac.y));
 }
 
-float smooth_1d(float2 uv, int i, float2 scale)
+float smoothstep_1d(float2 uv, int i, float2 scale)
 {
 	float theta = float(i) * sub_rotation;
 	uv = transform(uv, float2(0.5, 0.5), theta);

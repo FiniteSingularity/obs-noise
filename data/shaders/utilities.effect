@@ -44,9 +44,6 @@ float4 adjustments(float4 color, float b, float c)
 		ca * color.g + b,
 		ca * color.b + b
 	);
-	if (ridged)
-	{
-		col = 1.0 - col;
-	}
+	col = ridged ? 1.0 - col : col;
 	return float4(col.r, col.g, col.b, color.a);
 }
