@@ -449,8 +449,10 @@ static obs_properties_t *noise_source_properties(void *data)
 					 OBS_GROUP_NORMAL, displacement_group);
 	}
 
+	obs_properties_t *presets = obs_properties_create();
+
 	obs_property_t *presets_list = obs_properties_add_list(
-		props, "presets", "",
+		presets, "presets", "",
 		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 
 	obs_data_array_t *data_array = NULL;
@@ -464,17 +466,51 @@ static obs_properties_t *noise_source_properties(void *data)
 	}
 
 	obs_property_list_add_int(presets_list, obs_module_text("Noise.Custom"), 0);
+	obs_property_list_add_int(presets_list, obs_module_text("Noise.LoadFromFile"), 1);
 
 	for (size_t i = 0; i < obs_data_array_count(data_array); i++) {
 		obs_data_t *preset = obs_data_array_item(data_array, i);
 		const char *name = obs_data_get_string(preset, "name");
-		obs_property_list_add_int(presets_list, name, i+1);
+		obs_property_list_add_int(presets_list, name, i+2);
 		obs_data_release(preset);
 	}
+
+	const char *file_types = filter->is_filter
+					 ? "Noise Displace Preset (*.dnoise)"
+					 : "Preset (*.snoise)";
+
+	obs_property_t *load_properties = obs_properties_add_path(presets, "load_preset_path", obs_module_text("Noise.PresetFilePath"),
+				OBS_PATH_FILE, file_types,
+				NULL);
+
+	obs_property_set_modified_callback2(load_properties, preset_loaded,
+					    data);
+
+	obs_property_t *save_property_btn = obs_properties_add_button2(
+		presets, "save_button", "Save Current Settings To File", save_as_button_clicked, data);
+
+	obs_properties_add_text(presets, "save_info", "Click browse below to save these settings to a file, or click `Cancel` to return.",
+				OBS_TEXT_INFO);
+
+	obs_property_t *save_property = obs_properties_add_path(presets, "preset_save_path",
+						"Preset Save", OBS_PATH_FILE_SAVE,
+						"Preset (*.snoise)",
+						NULL);
+
+	obs_property_t *cancel_save_property_btn = obs_properties_add_button2(
+		presets, "cancel_save_button", "Cancel",
+		cancel_save_button_clicked, data);
+
+	obs_property_set_modified_callback2(save_property, preset_saved, data);
 
 	obs_data_array_release(data_array);
 
 	obs_property_set_modified_callback2(presets_list, setting_preset_selected, data);
+
+	obs_properties_add_group(props, "presets_group",
+				 obs_module_text("Noise.PresetProperties"),
+				 OBS_GROUP_NORMAL, presets);
+
 
 	obs_properties_t *general_noise_group = obs_properties_create();
 	obs_properties_add_text(general_noise_group, "noise_type_note",
@@ -699,7 +735,8 @@ static obs_properties_t *noise_source_properties(void *data)
 
 	//obs_properties_add_button2(props, "export_btn", "Temp Export",
 	//			  tmp_export_clicked, data);
-
+	setting_visibility("cancel_save_button", false, props);
+	setting_visibility("save_info", false, props);
 	return props;
 }
 
@@ -722,6 +759,30 @@ static void noise_source_video_tick(void *data, float seconds)
 	filter->rendered = false;
 }
 
+static bool save_as_button_clicked(obs_properties_t *props,
+				   obs_property_t *property, void *data)
+{
+	setting_visibility("presets", false, props);
+	setting_visibility("load_preset_path", false, props);
+	setting_visibility("preset_save_path", true, props);
+	setting_visibility("save_button", false, props);
+	setting_visibility("save_info", true, props);
+	setting_visibility("cancel_save_button", true, props);
+	return true;
+}
+
+static bool cancel_save_button_clicked(obs_properties_t *props,
+				   obs_property_t *property, void *data)
+{
+	setting_visibility("presets", true, props);
+	setting_visibility("load_preset_path", false, props);
+	setting_visibility("preset_save_path", false, props);
+	setting_visibility("save_button", true, props);
+	setting_visibility("save_info", false, props);
+	setting_visibility("cancel_save_button", false, props);
+	return true;
+}
+
 static bool setting_channels_modified(obs_properties_t *props,
 				    obs_property_t *p, obs_data_t *settings)
 {
@@ -738,6 +799,48 @@ static bool setting_channels_modified(obs_properties_t *props,
 	obs_property_list_item_disable(noise_type_property, 3, disable);
 	return true;
 }
+
+static bool preset_saved(void* data, obs_properties_t* props, obs_property_t* p, obs_data_t* settings)
+{
+	noise_data_t *filter = data;
+
+	const char *extension = filter->is_filter ? ".dnoise" : ".snoise";
+	const char *file_path = obs_data_get_string(settings, "preset_save_path");
+	struct dstr path = {0};
+	dstr_init_copy(&path, file_path);
+	if (strcmp(extension, file_path+strlen(file_path)-7) != 0) {
+		dstr_cat(&path, extension);
+	}
+	obs_data_unset_user_value(settings, "preset_save_path");
+	obs_data_t *output = obs_data_get_defaults(settings);
+	obs_data_apply(output, settings);
+	obs_data_unset_user_value(output, "presets");
+	obs_data_unset_user_value(output, "source_width");
+	obs_data_unset_user_value(output, "source_height");
+	const char *json_string = obs_data_get_json_pretty(output);
+	os_quick_write_utf8_file(path.array, json_string, strlen(json_string), false);
+	obs_data_release(output);
+	dstr_free(&path);
+	cancel_save_button_clicked(props, p, data);
+	return true;
+}
+
+static bool preset_loaded(void* data, obs_properties_t* props, obs_property_t* p,
+	obs_data_t* settings)
+{
+	noise_data_t *filter = data;
+	const char *file_path = obs_data_get_string(settings, "load_preset_path");
+	obs_data_unset_user_value(settings, "load_preset_path");
+	obs_data_t* import = obs_data_create_from_json_file(file_path);
+	obs_data_apply(settings, import);
+	obs_data_release(import);
+
+	setting_visibility("load_preset_path", false, props);
+	obs_data_set_int(settings, "presets", 0);
+	filter->reload_effect = true;
+	return true;
+}
+
 
 static bool setting_billow_modified(void *data, obs_properties_t *props,
 				    obs_property_t *p, obs_data_t *settings)
@@ -801,15 +904,21 @@ static bool setting_preset_selected(void *data, obs_properties_t *props,
 	noise_data_t *filter = data;
 
 	size_t index = (size_t)obs_data_get_int(settings, "presets");
-
+	setting_visibility("load_preset_path", false, props);
+	setting_visibility("save_button", true, props);
 	if (index == 0) {
-		return false;
+		return true;
+	} else if (index == 1) {
+		// Code here to enable load file.
+		setting_visibility("load_preset_path", true, props);
+		setting_visibility("save_button", false, props);
+		return true;
 	}
-
+	
 	obs_data_array_t *data_array =
 		obs_data_get_array(filter->global_preset_data, "presets");
 
-	obs_data_t *preset = obs_data_array_item(data_array, index-1);
+	obs_data_t *preset = obs_data_array_item(data_array, index-2);
 	obs_data_t *preset_settings = obs_data_get_obj(preset, "settings");
 
 	obs_data_apply(settings, preset_settings);
@@ -1251,8 +1360,8 @@ static void load_noise_displace_effect(noise_data_t *filter)
 {
 	filter->loading_effect = true;
 	const char *effect_file_path = "/shaders/noise_displace.effect";
-	filter->noise_effect =
-		load_shader_effect(filter->noise_effect, effect_file_path);
+	filter->noise_effect = load_noise_shader_effect(filter,
+							effect_file_path);
 	if (filter->noise_effect) {
 		size_t effect_count =
 			gs_effect_get_num_params(filter->noise_effect);
