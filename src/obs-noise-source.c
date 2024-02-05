@@ -486,7 +486,7 @@ static obs_properties_t *noise_source_properties(void *data)
 	obs_property_set_modified_callback2(load_properties, preset_loaded,
 					    data);
 
-	obs_property_t *save_property_btn = obs_properties_add_button2(
+	obs_properties_add_button2(
 		presets, "save_button", "Save Current Settings To File", save_as_button_clicked, data);
 
 	obs_properties_add_text(presets, "save_info", "Click browse below to save these settings to a file, or click `Cancel` to return.",
@@ -497,7 +497,7 @@ static obs_properties_t *noise_source_properties(void *data)
 						"Preset (*.snoise)",
 						NULL);
 
-	obs_property_t *cancel_save_property_btn = obs_properties_add_button2(
+	obs_properties_add_button2(
 		presets, "cancel_save_button", "Cancel",
 		cancel_save_button_clicked, data);
 
@@ -762,6 +762,8 @@ static void noise_source_video_tick(void *data, float seconds)
 static bool save_as_button_clicked(obs_properties_t *props,
 				   obs_property_t *property, void *data)
 {
+	UNUSED_PARAMETER(property);
+	UNUSED_PARAMETER(data);
 	setting_visibility("presets", false, props);
 	setting_visibility("load_preset_path", false, props);
 	setting_visibility("preset_save_path", true, props);
@@ -774,6 +776,8 @@ static bool save_as_button_clicked(obs_properties_t *props,
 static bool cancel_save_button_clicked(obs_properties_t *props,
 				   obs_property_t *property, void *data)
 {
+	UNUSED_PARAMETER(property);
+	UNUSED_PARAMETER(data);
 	setting_visibility("presets", true, props);
 	setting_visibility("load_preset_path", false, props);
 	setting_visibility("preset_save_path", false, props);
@@ -817,7 +821,7 @@ static bool preset_saved(void* data, obs_properties_t* props, obs_property_t* p,
 	obs_data_unset_user_value(output, "presets");
 	obs_data_unset_user_value(output, "source_width");
 	obs_data_unset_user_value(output, "source_height");
-	const char *json_string = obs_data_get_json_pretty(output);
+	const char *json_string = obs_data_get_json(output);
 	os_quick_write_utf8_file(path.array, json_string, strlen(json_string), false);
 	obs_data_release(output);
 	dstr_free(&path);
@@ -828,6 +832,8 @@ static bool preset_saved(void* data, obs_properties_t* props, obs_property_t* p,
 static bool preset_loaded(void* data, obs_properties_t* props, obs_property_t* p,
 	obs_data_t* settings)
 {
+	UNUSED_PARAMETER(p);
+
 	noise_data_t *filter = data;
 	const char *file_path = obs_data_get_string(settings, "load_preset_path");
 	obs_data_unset_user_value(settings, "load_preset_path");
