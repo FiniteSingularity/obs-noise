@@ -517,19 +517,19 @@ static obs_properties_t *noise_source_properties(void *data)
 				obs_module_text("Noise.Type.OpenSimplexNote"),
 				OBS_TEXT_INFO);
 
-	obs_property_t *noise_quality = obs_properties_add_list(
-		general_noise_group, "noise_quality",
-		obs_module_text("Noise.Quality"), OBS_COMBO_TYPE_LIST,
-		OBS_COMBO_FORMAT_INT);
-	obs_property_list_add_int(noise_quality,
-				  obs_module_text(NOISE_QUALITY_FAST_LABEL),
-				  NOISE_QUALITY_FAST);
-	obs_property_list_add_int(noise_quality,
-				  obs_module_text(NOISE_QUALITY_HIGH_LABEL),
-				  NOISE_QUALITY_HIGH);
+	//obs_property_t *noise_quality = obs_properties_add_list(
+	//	general_noise_group, "noise_quality",
+	//	obs_module_text("Noise.Quality"), OBS_COMBO_TYPE_LIST,
+	//	OBS_COMBO_FORMAT_INT);
+	//obs_property_list_add_int(noise_quality,
+	//			  obs_module_text(NOISE_QUALITY_FAST_LABEL),
+	//			  NOISE_QUALITY_FAST);
+	//obs_property_list_add_int(noise_quality,
+	//			  obs_module_text(NOISE_QUALITY_HIGH_LABEL),
+	//			  NOISE_QUALITY_HIGH);
 
-	obs_property_set_modified_callback2(noise_quality,
-					    setting_quality_modified, data);
+	//obs_property_set_modified_callback2(noise_quality,
+	//				    setting_quality_modified, data);
 
 	obs_property_t *noise_type_list = obs_properties_add_list(
 		general_noise_group, "noise_type",
@@ -1512,7 +1512,8 @@ static gs_effect_t *load_noise_shader_effect(noise_data_t *filter,
 	struct dstr hash_functions = {0};
 	struct dstr hash_filename = {0};
 	dstr_cat(&hash_filename, obs_get_module_data_path(obs_current_module()));
-	dstr_cat(&hash_filename, get_hash_effect_string(filter->quality));
+	//dstr_cat(&hash_filename, get_hash_effect_string(filter->quality));
+	dstr_cat(&hash_filename, get_hash_effect_string(NOISE_QUALITY_HIGH));
 	char *hash_functions_str = load_shader_from_file(hash_filename.array);
 	dstr_init_copy(&hash_functions, hash_functions_str);
 	dstr_replace(&shader_text, "<HASH_FUNCTIONS>", hash_functions.array);
