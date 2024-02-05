@@ -116,13 +116,11 @@ char *load_shader_from_file(const char *file_name)
 			char *end = strrchr(line, '"');
 
 			dstr_ncat(&include_path, start, end - start);
-			char *abs_include_path =
-				os_get_abs_path_ptr(include_path.array);
 			char *file_contents =
-				load_shader_from_file(abs_include_path);
+				load_shader_from_file(include_path.array);
 			dstr_cat(&shader_file, file_contents);
 			dstr_cat(&shader_file, "\n");
-			bfree(abs_include_path);
+			//bfree(abs_include_path);
 			bfree(file_contents);
 			dstr_free(&include_path);
 		} else {

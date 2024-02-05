@@ -1,0 +1,56 @@
+float3 block_3d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = (uv) * uv_size;
+	
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+
+	float hash = hash31(float3(coord, scale.x));
+	
+	//float hash = hash11(19.0 * floor(coord.x) + 47.0 * floor(coord.y));
+	float pixel_time = time * (1.0f + hash);
+
+	return value_noise_lt_3d(coord, pixel_time);
+}
+
+float2 block_2d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = (uv) * uv_size;
+	
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+
+	// Can this hash be lower quality?  I think so.
+	float hash = hash31(float3(coord, scale.x));
+	//float hash = hash11(19.01 * floor(coord.x) + 47.01 * floor(coord.y));
+	float pixel_time = time * (1.0f + hash);
+
+	return value_noise_lt_2d(coord, pixel_time);
+}
+
+float block_1d(float2 uv, int i, float2 scale)
+{
+	float theta = float(i) * sub_rotation;
+	uv = transform(uv, float2(0.5, 0.5), theta);
+
+	float2 displacement = float(i) * sub_displace;
+	float2 coord = (uv) * uv_size;
+	
+	coord += displacement;
+	coord *= 1.0 / (pixel_size * scale);
+
+	// Can this hash be lower quality?  I think so.
+	float hash = hash31(float3(coord, scale.x));
+	//float hash = hash11(19.01 * floor(coord.x) + 47.01 * floor(coord.y));
+	float pixel_time = time * (1.0f + hash);
+
+	return value_noise_lt_1d(coord, pixel_time);
+}

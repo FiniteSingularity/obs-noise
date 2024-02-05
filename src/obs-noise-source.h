@@ -30,11 +30,34 @@ static void load_noise_effect(noise_data_t *filter);
 static void load_noise_displace_effect(noise_data_t *filter);
 static void load_output_effect(noise_data_t *filter);
 
+static bool save_as_button_clicked(obs_properties_t *props,
+				   obs_property_t *property, void *data);
 static bool setting_preset_selected(void *data, obs_properties_t *props,
 				    obs_property_t *p, obs_data_t *settings);
 static bool setting_channels_modified(obs_properties_t *props,
 				      obs_property_t *p, obs_data_t *settings);
-static bool setting_noise_type_modified(obs_properties_t *props,
+static bool setting_noise_type_modified(void *data, obs_properties_t *props,
 				      obs_property_t *p, obs_data_t *settings);
-static bool setting_contours_modified(obs_properties_t *props,
+static bool setting_contours_modified(void *data, obs_properties_t *props,
 				      obs_property_t *p, obs_data_t *settings);
+static bool setting_billow_modified(void *data, obs_properties_t *props,
+				      obs_property_t *p, obs_data_t *settings);
+static bool setting_quality_modified(void *data, obs_properties_t *props,
+				     obs_property_t *p, obs_data_t *settings);
+static bool preset_saved(void *data, obs_properties_t *props, obs_property_t *p,
+			 obs_data_t *settings);
+static bool preset_loaded(void *data, obs_properties_t *props,
+			  obs_property_t *p, obs_data_t *settings);
+static bool cancel_save_button_clicked(obs_properties_t *props,
+				       obs_property_t *property, void *data);
+
+static gs_effect_t *load_noise_shader_effect(noise_data_t *filter,
+					     const char *effect_file_path);
+char *load_noise_shader_from_file(noise_data_t *filter, const char *file_name);
+
+static const char *get_noise_type_string(uint32_t noise_type);
+static const char *get_hash_effect_string(uint32_t quality);
+static const char *get_map_type_string(bool billow);
+static const char *get_contour_1_string(bool contour);
+static const char *get_contour_2_string(bool contour);
+static const char *get_contour_3_string(bool contour);
