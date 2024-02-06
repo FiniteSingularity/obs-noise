@@ -118,7 +118,7 @@ float4 mainImage1(VertData v_in) : TARGET
 float4 mainImageMax1(VertData v_in) : TARGET
 {
 	float2 uv = global_transform(v_in.uv, float2(0.5, 0.5), global_rotation);
-	float value = fractal_noise_max_2d(uv);
+	float2 value = fractal_noise_max_2d(uv);
 	float2 dw_shift = float2(9.5f, 10.2f);
 	for (int i = 0; i < dw_iterations; i++)
 	{
