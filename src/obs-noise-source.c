@@ -920,9 +920,11 @@ static bool setting_preset_selected(void *data, obs_properties_t *props,
 		setting_visibility("save_button", false, props);
 		return true;
 	}
-	
+
+	const char *preset_label = filter->is_filter ? "displace_presets" : "presets";
+
 	obs_data_array_t *data_array =
-		obs_data_get_array(filter->global_preset_data, "presets");
+		obs_data_get_array(filter->global_preset_data, preset_label);
 
 	obs_data_t *preset = obs_data_array_item(data_array, index-2);
 	obs_data_t *preset_settings = obs_data_get_obj(preset, "settings");
