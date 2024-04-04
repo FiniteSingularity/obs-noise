@@ -24,10 +24,12 @@ static obs_properties_t *noise_source_properties(void *data);
 static void noise_source_video_tick(void *data, float seconds);
 static void noise_source_defaults(obs_data_t *settings);
 static void draw_output(noise_data_t *filter);
-static void render_noise(noise_data_t *filter);
+static void render_noise(noise_data_t *filter, gs_texrender_t *output_texrender);
 static void render_noise_displace(noise_data_t *filter);
+static void render_noise_gradient(noise_data_t *filter);
 static void load_noise_effect(noise_data_t *filter);
 static void load_noise_displace_effect(noise_data_t *filter);
+static void load_noise_gradient_effect(noise_data_t *filter);
 static void load_output_effect(noise_data_t *filter);
 
 static bool save_as_button_clicked(obs_properties_t *props,

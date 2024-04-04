@@ -1,0 +1,102 @@
+#define SAMPLE_NOISE_2D(uv, i, scale) <NOISE_TYPE>_2d(uv, i, scale)
+#define MAP_NOISE_2D(c) <NOISE_MAP_TYPE>2(c)
+#define CONTOURS_2D(result) <CONTOUR_2>
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float2 displace_scale;
+uniform float2 uv_size;
+uniform float2 pixel_size;
+uniform float global_rotation;
+uniform float2 global_offset;
+uniform float2 sub_scaling;
+uniform float2 sub_displace;
+uniform float sum_influence;
+uniform float time;
+uniform float sub_influence;
+uniform float std_scale;
+uniform int layers;
+uniform int noise_type;
+
+uniform bool invert;
+uniform float sub_rotation;
+uniform float brightness;
+uniform float contrast;
+
+uniform bool billow;
+uniform bool ridged;
+uniform float power;
+uniform bool contours;
+uniform float num_contours;
+
+uniform int dw_iterations;
+uniform float2 dw_strength;
+
+<HASH_FUNCTIONS>
+#include "utilities.effect"
+#include "noise_functions.effect"
+
+VertData mainTransform(VertData v_in)
+{
+	v_in.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	return v_in;
+}
+
+float4 mainImage(VertData v_in) : TARGET
+{	
+	// 1. Get first pass of fractal noise
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float2 value = fractal_noise_2d(uv);
+	// 2. Apply Domain Warping
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		value = fractal_noise_2d(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+
+	// 3. Prepare and return pixel value
+	value = adjustments(float4(value, 1.0, 1.0), brightness, contrast).rgb;
+	// Scale 0-1 value to -1 to 1, then multiple by displace scale 
+	float2 offset = 2.0 * (value - 0.5) * displace_scale;
+	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
+}
+
+float4 mainImageMax(VertData v_in) : TARGET
+{
+	// 1. Get first pass of fractal noise
+	float2 uv = transform(v_in.uv, float2(0.5, 0.5), global_rotation);
+	float2 value = fractal_noise_max_2d(uv);
+	// 2. Apply Domain Warping
+	float2 dw_shift = float2(9.5f, 10.2f);
+	for (int i = 0; i < dw_iterations; i++)
+	{
+		value = fractal_noise_max_2d(uv + dw_strength * 2.0f * (value.xy - 0.5f) / uv_size + dw_shift);
+		dw_shift += 10.0f;
+	}
+
+	// 3. Prepare and return pixel value
+	value = adjustments(float4(value,1.0, 1.0), brightness, contrast).rgb;
+	// Scale 0-1 value to -1 to 1, then multiple by displace scale 
+	float2 offset = 2.0 * (value - 0.5) * displace_scale;
+	return image.Sample(textureSampler, v_in.uv + (offset / uv_size));
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImage(v_in);
+	}
+}
+
+technique DrawMax
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImageMax(v_in);
+	}
+}
