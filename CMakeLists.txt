@@ -27,6 +27,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 	src/obs-noise.h
 	src/obs-utils.c
 	src/obs-utils.h
+	src/dual-kawase.c
+	src/dual-kawase.h
 	src/version.h)
 
 if(BUILD_OUT_OF_TREE)

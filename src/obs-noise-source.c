@@ -1,5 +1,6 @@
 #include "obs-noise-source.h"
 #include "obs-noise.h"
+#include "dual-kawase.h"
 
 struct obs_source_info obs_noise_source = {
 	.id = "obs_noise_source",
@@ -54,9 +55,12 @@ static void *noise_displace_filter_create(obs_data_t *settings,
 	filter->reload_effect = false;
 
 	noise_create(filter);
-	obs_source_update(source, settings);
+	noise_source_update(filter, settings);
+	load_noise_effect(filter);
 	load_noise_displace_effect(filter);
+	load_noise_gradient_effect(filter);
 	load_output_effect(filter);
+	load_effect_dual_kawase(filter);
 	return filter;
 }
 
@@ -114,6 +118,26 @@ static void noise_source_destroy(void *data)
 		gs_effect_destroy(filter->noise_effect);
 	}
 
+	if (filter->displacement_effect) {
+		gs_effect_destroy(filter->displacement_effect);
+	}
+
+	if (filter->gradient_effect) {
+		gs_effect_destroy(filter->gradient_effect);
+	}
+
+	if (filter->effect_dual_kawase_downsample) {
+		gs_effect_destroy(filter->effect_dual_kawase_downsample);
+	}
+
+	if (filter->effect_dual_kawase_upsample) {
+		gs_effect_destroy(filter->effect_dual_kawase_upsample);
+	}
+	
+	if (filter->effect_dual_kawase_mix) {
+		gs_effect_destroy(filter->effect_dual_kawase_mix);
+	}
+
 	if (filter->output_effect) {
 		gs_effect_destroy(filter->output_effect);
 	}
@@ -124,6 +148,26 @@ static void noise_source_destroy(void *data)
 
 	if (filter->output_texrender) {
 		gs_texrender_destroy(filter->output_texrender);
+	}
+
+	if (filter->dispmap_texrender) {
+		gs_texrender_destroy(filter->dispmap_texrender);
+	}
+
+	if (filter->grad_texrender) {
+		gs_texrender_destroy(filter->grad_texrender);
+	}
+
+	if (filter->dk_render) {
+		gs_texrender_destroy(filter->dk_render);
+	}
+
+	if (filter->dk_render2) {
+		gs_texrender_destroy(filter->dk_render2);
+	}
+
+	if (filter->blur_output) {
+		gs_texrender_destroy(filter->blur_output);
 	}
 
 	if (filter->global_preset_data) {
@@ -214,6 +258,10 @@ static void noise_source_update(void *data, obs_data_t *settings)
 		var += var_factor;
 		sum_influence += influence;
 	}
+
+	filter->displacement_algorithm =
+		(uint8_t)obs_data_get_int(settings, "displacement_algo");
+
 	double std = sqrt(var);
 	filter->sum_influence = (float)sum_influence;
 	filter->std_scale = (1.0f-0.05f*((float)filter->layers-1.0f))*(float)(sum_influence/std);
@@ -223,6 +271,10 @@ static void noise_source_update(void *data, obs_data_t *settings)
 	filter->dw_iterations = (int)obs_data_get_int(settings, "dw_iterations");
 	filter->dw_strength.x = (float)obs_data_get_double(settings, "dw_strength_x");
 	filter->dw_strength.y = (float)obs_data_get_double(settings, "dw_strength_y");
+	if (filter->is_filter) {
+		filter->channels = filter->displacement_algorithm == NOISE_DISPLACEMENT_TWO_CHANNEL ? 2 : 1;
+	}
+
 	if (!filter->is_filter) {
 		vec4_from_rgba(&filter->map_color_1,
 			       (uint32_t)obs_data_get_int(settings,
@@ -231,10 +283,8 @@ static void noise_source_update(void *data, obs_data_t *settings)
 			       (uint32_t)obs_data_get_int(settings,
 							  "map_color_2"));
 	}
-	if (filter->reload_effect && !filter->is_filter) {
+	if (filter->reload_effect) {
 		load_noise_effect(filter);
-	} else if (filter->reload_effect) {
-		load_noise_displace_effect(filter);
 	}
 }
 
@@ -259,9 +309,27 @@ static void noise_displace_filter_video_render(void *data, gs_effect_t *effect)
 		return;
 	}
 
+	// Render noise to a texrender texture called displacement map
+	filter->dispmap_texrender =
+		create_or_reset_texrender(filter->dispmap_texrender);
+	render_noise(filter, filter->dispmap_texrender);
+	// If algorithm type is gradient
+	if (filter->displacement_algorithm == NOISE_DISPLACEMENT_GRADIENT) {
+		render_noise_gradient(filter);
+		dual_kawase_blur(4, filter, filter->grad_texrender);
+		gs_texrender_t *tmp = filter->dispmap_texrender;
+		filter->dispmap_texrender = filter->blur_output;
+		filter->blur_output = tmp;
+	}
+	// Huge blur to get average pixel value at center.
+	dual_kawase_blur(1024, filter, filter->dispmap_texrender);
 	// 3. Create Stroke Mask
 	// Call a rendering functioner, e.g.:
 	render_noise_displace(filter);
+
+	//gs_texrender_t *tmp = filter->dispmap_texrender;
+	//filter->dispmap_texrender = filter->output_texrender;
+	//filter->output_texrender = tmp;
 
 	// 3. Draw result (filter->output_texrender) to source
 	draw_output_filter(filter);
@@ -375,8 +443,8 @@ static void noise_source_video_render(void *data, gs_effect_t *effect)
 	//	obs_source_skip_video_filter(filter->context);
 	//	return;
 	//}
-	render_noise(filter);
-
+	filter->output_texrender = create_or_reset_texrender(filter->output_texrender);
+	render_noise(filter, filter->output_texrender);
 
 	// 3. Create Stroke Mask
 	// Call a rendering functioner, e.g.:
@@ -432,6 +500,22 @@ static obs_properties_t *noise_source_properties(void *data)
 			OBS_GROUP_NORMAL, source_dimensions);
 	} else {
 		obs_properties_t *displacement_group = obs_properties_create();
+
+		obs_property_t *displacement_algo_list = obs_properties_add_list(displacement_group, "displacement_algo",
+				obs_module_text("Noise.Displacement.Algorithm"),
+				OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+
+		obs_property_list_add_int(
+			displacement_algo_list,
+			obs_module_text(NOISE_DISPLACEMENT_TWO_CHANNEL_LABEL),
+			NOISE_DISPLACEMENT_TWO_CHANNEL
+		);
+
+		obs_property_list_add_int(
+			displacement_algo_list,
+			obs_module_text(NOISE_DISPLACEMENT_GRADIENT_LABEL),
+			NOISE_DISPLACEMENT_GRADIENT
+		);
 
 		p = obs_properties_add_float_slider(
 			displacement_group, "filter_displace_scale_x",
@@ -973,6 +1057,8 @@ static void noise_source_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "dw_iterations", 0);
 	obs_data_set_default_int(settings, "map_color_1", DEFAULT_MAP_COLOR_1);
 	obs_data_set_default_int(settings, "map_color_2", DEFAULT_MAP_COLOR_2);
+	obs_data_set_default_int(settings, "displacement_algo",
+				 NOISE_DISPLACEMENT_TWO_CHANNEL);
 }
 
 static void draw_output(noise_data_t *filter)
@@ -989,12 +1075,11 @@ static void draw_output(noise_data_t *filter)
 	}
 }
 
-static void render_noise(noise_data_t *filter)
+static void render_noise(noise_data_t *filter, gs_texrender_t *output_texrender)
 {
 	gs_effect_t *effect = filter->noise_effect;
 
-	filter->output_texrender =
-		create_or_reset_texrender(filter->output_texrender);
+
 
 	gs_texture_t *texture =
 		gs_texrender_get_texture(filter->output_texrender);
@@ -1133,13 +1218,13 @@ static void render_noise(noise_data_t *filter)
 	if (filter->comb_max) {
 		dstr_cat(&technique, "Max");
 	}
-	if (gs_texrender_begin(filter->output_texrender, width,
+	if (gs_texrender_begin(output_texrender, width,
 			       height)) {
 		gs_ortho(0.0f, (float)width, 0.0f, (float)height,
 			 -100.0f, 100.0f);
 		while (gs_effect_loop(effect, technique.array))
 			gs_draw_sprite(texture, 0, width, height);
-		gs_texrender_end(filter->output_texrender);
+		gs_texrender_end(output_texrender);
 	}
 	dstr_free(&technique);
 	gs_blend_state_pop();
@@ -1147,10 +1232,12 @@ static void render_noise(noise_data_t *filter)
 
 static void render_noise_displace(noise_data_t *filter)
 {
-	gs_effect_t *effect = filter->noise_effect;
+	gs_effect_t *effect = filter->displacement_effect;
 
 	gs_texture_t *texture = gs_texrender_get_texture(filter->input_texrender);
-	if (!effect || !texture || filter->loading_effect) {
+	gs_texture_t *dispmap_texture = gs_texrender_get_texture(filter->dispmap_texrender);
+	gs_texture_t *avg_pixel = gs_texrender_get_texture(filter->blur_output);
+	if (!effect || !texture || !dispmap_texture || filter->loading_effect) {
 		return;
 	}
 
@@ -1161,130 +1248,80 @@ static void render_noise_displace(noise_data_t *filter)
 		return;
 	}
 
-	if (filter->param_image) {
-		gs_effect_set_texture(filter->param_image, texture);
+	uint32_t width = filter->width;
+	uint32_t height = filter->height;
+
+	if (filter->param_displace_image) {
+		gs_effect_set_texture(filter->param_displace_image, texture);
+	}
+
+	if (filter->param_displace_displacement_map) {
+		gs_effect_set_texture(filter->param_displace_displacement_map, dispmap_texture);
 	}
 
 	if (filter->param_displace_scale) {
-		gs_effect_set_vec2(filter->param_displace_scale,
-				   &filter->displace_scale);
+		gs_effect_set_vec2(filter->param_displace_scale, &filter->displace_scale);
 	}
 
-	if (filter->time_param) {
-		gs_effect_set_float(filter->time_param, filter->clock_time);
+	if (filter->param_displace_uv_size) {
+		struct vec2 uv_size;
+		uv_size.x = (float)width;
+		uv_size.y = (float)height;
+		gs_effect_set_vec2(filter->param_displace_uv_size, &uv_size);
 	}
 
-	if (filter->pixel_size_param) {
-		gs_effect_set_vec2(filter->pixel_size_param,
-				   &filter->pixel_size);
-	}
-
-	if (filter->uv_size_param) {
-		gs_effect_set_vec2(filter->uv_size_param, &filter->uv_size);
-	}
-
-	if (filter->layers_param) {
-		gs_effect_set_int(filter->layers_param, (int)filter->layers);
-	}
-
-	if (filter->sub_influence_param) {
-		gs_effect_set_float(filter->sub_influence_param,
-				    filter->sub_influence);
-	}
-
-	if (filter->noise_type_param) {
-		gs_effect_set_int(filter->noise_type_param, filter->noise_type);
-	}
-
-	if (filter->noise_map_type_param) {
-		gs_effect_set_int(filter->noise_map_type_param,
-				  filter->noise_map_type);
-	}
-
-	if (filter->invert_param) {
-		gs_effect_set_bool(filter->invert_param, filter->invert);
-	}
-
-	if (filter->sub_scaling_param) {
-		gs_effect_set_vec2(filter->sub_scaling_param,
-				   &filter->sub_scaling);
-	}
-
-	if (filter->sub_displace_param) {
-		gs_effect_set_vec2(filter->sub_displace_param,
-				   &filter->sub_displace);
-	}
-
-	if (filter->sub_rotation_param) {
-		gs_effect_set_float(filter->sub_rotation_param,
-				    filter->sub_rotation);
-	}
-
-	if (filter->param_brightness) {
-		gs_effect_set_float(filter->param_brightness,
-				    filter->brightness);
-	}
-
-	if (filter->param_contrast) {
-		gs_effect_set_float(filter->param_contrast, filter->contrast);
-	}
-
-	if (filter->param_billow) {
-		gs_effect_set_bool(filter->param_billow, filter->billow);
-	}
-
-	if (filter->param_ridged) {
-		gs_effect_set_bool(filter->param_ridged, filter->ridged);
-	}
-
-	if (filter->param_power) {
-		gs_effect_set_float(filter->param_power, filter->power);
-	}
-
-	if (filter->param_sum_influence) {
-		gs_effect_set_float(filter->param_sum_influence, filter->sum_influence);
-	}
-
-	if (filter->param_std_scale) {
-		gs_effect_set_float(filter->param_std_scale, filter->std_scale);
-	}
-
-	if (filter->param_dw_iterations) {
-		gs_effect_set_int(filter->param_dw_iterations, filter->dw_iterations);
-	}
-
-	if (filter->param_dw_strength) {
-		gs_effect_set_vec2(filter->param_dw_strength, &filter->dw_strength);
-	}
-
-	if (filter->param_global_rotation) {
-		gs_effect_set_float(filter->param_global_rotation,
-				    filter->global_rotation);
-	}
-
-	if (filter->param_global_offset) {
-		gs_effect_set_vec2(filter->param_global_offset,
-				   &filter->global_offset);
-	}
-
-	if (filter->param_contours) {
-		gs_effect_set_bool(filter->param_contours, filter->contour);
-	}
-
-	if (filter->param_num_contours) {
-		gs_effect_set_float(filter->param_num_contours,
-				    (float)filter->num_contours);
+	if (filter->param_displace_average_pixel) {
+		gs_effect_set_texture(filter->param_displace_average_pixel,
+				      avg_pixel);
 	}
 
 	set_blending_parameters();
-	uint32_t width = filter->width;
-	uint32_t height = filter->height;
 	if (gs_texrender_begin(filter->output_texrender, width, height)) {
 		gs_ortho(0.0f, (float)width, 0.0f, (float)height, -100.0f,
 			 100.0f);
 		while (gs_effect_loop(effect, "Draw"))
 			gs_draw_sprite(texture, 0, width, height);
 		gs_texrender_end(filter->output_texrender);
+	}
+
+	gs_blend_state_pop();
+}
+
+static void render_noise_gradient(noise_data_t *filter)
+{
+	gs_effect_t *effect = filter->gradient_effect;
+
+	gs_texture_t *texture =
+		gs_texrender_get_texture(filter->dispmap_texrender);
+	if (!effect || !texture || filter->loading_effect) {
+		return;
+	}
+
+	uint32_t width = filter->width;
+	uint32_t height = filter->height;
+
+	filter->grad_texrender = 
+		create_or_reset_texrender(filter->grad_texrender);
+
+	if (filter->param_grad_image) {
+		gs_effect_set_texture(filter->param_grad_image, texture);
+	}
+
+	if (filter->param_grad_uv_size) {
+		struct vec2 uv_size;
+		uv_size.x = (float)width;
+		uv_size.y = (float)height;
+		gs_effect_set_vec2(filter->param_grad_uv_size, &uv_size);
+	}
+
+	set_blending_parameters();
+
+	if (gs_texrender_begin(filter->grad_texrender, width, height)) {
+		gs_ortho(0.0f, (float)width, 0.0f, (float)height, -100.0f,
+			 100.0f);
+		while (gs_effect_loop(effect, "Draw"))
+			gs_draw_sprite(texture, 0, width, height);
+		gs_texrender_end(filter->grad_texrender);
 	}
 
 	gs_blend_state_pop();
@@ -1368,69 +1405,53 @@ static void load_noise_displace_effect(noise_data_t *filter)
 {
 	filter->loading_effect = true;
 	const char *effect_file_path = "/shaders/noise_displace.effect";
-	filter->noise_effect = load_noise_shader_effect(filter,
-							effect_file_path);
-	if (filter->noise_effect) {
+	filter->displacement_effect = load_shader_effect(filter->displacement_effect, effect_file_path);
+	if (filter->displacement_effect) {
 		size_t effect_count =
-			gs_effect_get_num_params(filter->noise_effect);
+			gs_effect_get_num_params(filter->displacement_effect);
 		for (size_t effect_index = 0; effect_index < effect_count;
 		     effect_index++) {
 			gs_eparam_t *param = gs_effect_get_param_by_idx(
-					filter->noise_effect, effect_index);
+				filter->displacement_effect, effect_index);
 			struct gs_effect_param_info info;
 			gs_effect_get_param_info(param, &info);
-			if (strcmp(info.name, "time") == 0) {
-				filter->time_param = param;
-			} else if (strcmp(info.name, "pixel_size") == 0) {
-				filter->pixel_size_param = param;
-			} else if (strcmp(info.name, "uv_size") == 0) {
-				filter->uv_size_param = param;
-			} else if (strcmp(info.name, "layers") == 0) {
-				filter->layers_param = param;
-			} else if (strcmp(info.name, "sub_influence") == 0) {
-				filter->sub_influence_param = param;
-			} else if (strcmp(info.name, "noise_type") == 0) {
-				filter->noise_type_param = param;
-			} else if (strcmp(info.name, "noise_map_type") == 0) {
-				filter->noise_map_type_param = param;
-			} else if (strcmp(info.name, "invert") == 0) {
-				filter->invert_param = param;
-			} else if (strcmp(info.name, "sub_scaling") == 0) {
-				filter->sub_scaling_param = param;
-			} else if (strcmp(info.name, "sub_displace") == 0) {
-				filter->sub_displace_param = param;
-			} else if (strcmp(info.name, "sub_rotation") == 0) {
-				filter->sub_rotation_param = param;
+
+			if (strcmp(info.name, "uv_size") == 0) {
+				filter->param_displace_uv_size = param;
 			} else if (strcmp(info.name, "image") == 0) {
-				filter->param_image = param;
-			} else if (strcmp(info.name, "displace_scale") == 0) {
+				filter->param_displace_image = param;
+			} else if (strcmp(info.name, "displacement_map") == 0) {
+				filter->param_displace_displacement_map = param;
+			} else if (strcmp(info.name, "scale") == 0) {
 				filter->param_displace_scale = param;
-			} else if (strcmp(info.name, "contrast") == 0) {
-				filter->param_contrast = param;
-			} else if (strcmp(info.name, "brightness") == 0) {
-				filter->param_brightness = param;
-			} else if (strcmp(info.name, "billow") == 0) {
-				filter->param_billow = param;
-			} else if (strcmp(info.name, "ridged") == 0) {
-				filter->param_ridged = param;
-			} else if (strcmp(info.name, "power") == 0) {
-				filter->param_power = param;
-			} else if (strcmp(info.name, "sum_influence") == 0) {
-				filter->param_sum_influence = param;
-			} else if (strcmp(info.name, "std_scale") == 0) {
-				filter->param_std_scale = param;
-			} else if (strcmp(info.name, "dw_iterations") == 0) {
-				filter->param_dw_iterations = param;
-			} else if (strcmp(info.name, "dw_strength") == 0) {
-				filter->param_dw_strength = param;
-			} else if (strcmp(info.name, "global_rotation") == 0) {
-				filter->param_global_rotation = param;
-			} else if (strcmp(info.name, "global_offset") == 0) {
-				filter->param_global_offset = param;
-			} else if (strcmp(info.name, "contours") == 0) {
-				filter->param_contours = param;
-			} else if (strcmp(info.name, "num_contours") == 0) {
-				filter->param_num_contours = param;
+			} else if (strcmp(info.name, "average_pixel") == 0) {
+				filter->param_displace_average_pixel = param;
+			}
+		}
+	}
+	filter->loading_effect = false;
+	filter->reload_effect = false;
+}
+
+static void load_noise_gradient_effect(noise_data_t *filter)
+{
+	filter->loading_effect = true;
+	const char *effect_file_path = "/shaders/noise_gradient.effect";
+	filter->gradient_effect = load_shader_effect(filter->gradient_effect, effect_file_path);
+	if (filter->gradient_effect) {
+		size_t effect_count =
+			gs_effect_get_num_params(filter->gradient_effect);
+		for (size_t effect_index = 0; effect_index < effect_count;
+		     effect_index++) {
+			gs_eparam_t *param = gs_effect_get_param_by_idx(
+				filter->gradient_effect, effect_index);
+			struct gs_effect_param_info info;
+			gs_effect_get_param_info(param, &info);
+
+			if (strcmp(info.name, "uv_size") == 0) {
+				filter->param_grad_uv_size = param;
+			} else if (strcmp(info.name, "image") == 0) {
+				filter->param_grad_image = param;
 			}
 		}
 	}

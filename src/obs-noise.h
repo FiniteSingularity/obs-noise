@@ -50,6 +50,11 @@
 #define NOISE_QUALITY_HIGH 1
 #define NOISE_QUALITY_HIGH_LABEL "Noise.Quality.HighQuality"
 
+#define NOISE_DISPLACEMENT_TWO_CHANNEL 0
+#define NOISE_DISPLACEMENT_TWO_CHANNEL_LABEL "Noise.Displacement.Algorithm.TwoChannel"
+#define NOISE_DISPLACEMENT_GRADIENT 1
+#define NOISE_DISPLACEMENT_GRADIENT_LABEL "Noise.Displacement.Algorithm.Gradient"
+
 struct noise_data;
 typedef struct noise_data noise_data_t;
 
@@ -61,11 +66,21 @@ struct noise_data {
 	gs_texrender_t *input_texrender;
 	bool output_rendered;
 	gs_texrender_t *output_texrender;
+	gs_texrender_t *dispmap_texrender;
+	gs_texrender_t *grad_texrender;
+	gs_texrender_t *dk_render;
+	gs_texrender_t *dk_render2;
+	gs_texrender_t *blur_output;
 
 	obs_data_t *global_preset_data;
 
 	gs_effect_t *noise_effect;
+	gs_effect_t *gradient_effect;
+	gs_effect_t *displacement_effect;
 	gs_effect_t *output_effect;
+	gs_effect_t *effect_dual_kawase_downsample;
+	gs_effect_t *effect_dual_kawase_upsample;
+	gs_effect_t *effect_dual_kawase_mix;
 
 	bool rendered;
 	bool rendering;
@@ -95,6 +110,8 @@ struct noise_data {
 	bool contour;
 	int num_contours;
 
+	uint8_t displacement_algorithm;
+
 	bool billow;
 	bool ridged;
 	bool comb_max;
@@ -119,7 +136,6 @@ struct noise_data {
 	gs_eparam_t *invert_param;
 	gs_eparam_t *sub_displace_param;
 	gs_eparam_t *sub_rotation_param;
-	gs_eparam_t *param_displace_scale;
 	gs_eparam_t *param_image;
 	gs_eparam_t *param_contrast;
 	gs_eparam_t *param_brightness;
@@ -128,7 +144,6 @@ struct noise_data {
 	gs_eparam_t *param_ridged;
 	gs_eparam_t *param_sum_influence;
 	gs_eparam_t *param_std_scale;
-
 	gs_eparam_t *param_dw_iterations;
 	gs_eparam_t *param_dw_strength;
 	gs_eparam_t *param_global_rotation;
@@ -140,6 +155,21 @@ struct noise_data {
 	gs_eparam_t *param_color_2;
 	gs_eparam_t *param_contours;
 	gs_eparam_t *param_num_contours;
+
+	gs_eparam_t *param_displace_uv_size;
+	gs_eparam_t *param_displace_image;
+	gs_eparam_t *param_displace_displacement_map;
+	gs_eparam_t *param_displace_scale;
+	gs_eparam_t *param_displace_average_pixel;
+
+	gs_eparam_t *param_grad_uv_size;
+	gs_eparam_t *param_grad_image;
+
+	gs_eparam_t *param_downsample_texel_step;
+	gs_eparam_t *param_upsample_texel_step;
+	gs_eparam_t *param_mix_image;
+	gs_eparam_t *param_mix_image2;
+	gs_eparam_t *param_mix_ratio;
 
 	float clock_time;
 

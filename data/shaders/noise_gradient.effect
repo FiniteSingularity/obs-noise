@@ -1,0 +1,39 @@
+#include "utilities.effect"
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform float2 uv_size;
+
+VertData mainTransform(VertData v_in)
+{
+	v_in.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	return v_in;
+}
+
+float4 mainImage(VertData v_in) : TARGET
+{
+	//float2 coord = max(v_in.uv * uv_size, float2(1.0, 1.0));
+	float2 coord = v_in.uv * uv_size;
+	float2 dx = coord + float2(1.0, 0.0);
+	float2 dxn = coord - float2(1.0, 0.0);
+	float2 dy = coord + float2(0.0, 1.0);
+	float2 dyn = coord - float2(0.0, 1.0);
+
+	float4 disp_x = image.Sample(textureSampler, dx / uv_size);
+	float4 disp_xn = image.Sample(textureSampler, dxn / uv_size);
+	float4 disp_y = image.Sample(textureSampler, dy / uv_size);
+	float4 disp_yn = image.Sample(textureSampler, dyn / uv_size);
+
+	float ddx = disp_x.r - disp_xn.r;
+	float ddy = disp_y.r - disp_yn.r;
+	return float4(20.0 * ddx, 20.0 * ddy, 0.0, 1.0);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImage(v_in);
+	}
+}
