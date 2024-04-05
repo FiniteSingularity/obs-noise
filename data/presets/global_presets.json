@@ -1,9 +1,9 @@
 {
-	"settings_version": "0.0.2",
+	"settings_version": "1.0.0",
 	"presets": [
 		{
 			"name": "Whispy Smoke",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -34,7 +34,7 @@
 		},
 		{
 			"name": "60s Wallpaper",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -65,7 +65,7 @@
 		},
 		{
 			"name": "Energy Field",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": true,
 				"ridged": true,
@@ -96,7 +96,7 @@
 		},
 		{
 			"name": "Watercolor",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -127,7 +127,7 @@
 		},
 		{
 			"name": "TV Static",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -158,7 +158,7 @@
 		},
 		{
 			"name": "Tide Pool",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -189,7 +189,7 @@
 		},
 		{
 			"name": "Rainbow Smoke",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -220,7 +220,7 @@
 		},
 		{
 			"name": "Impressionist Waves",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -251,7 +251,7 @@
 		},
 		{
 			"name": "Happy Little Clouds",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": true,
 				"ridged": false,
@@ -282,7 +282,7 @@
 		},
 		{
 			"name": "Magma",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": true,
 				"ridged": true,
@@ -315,7 +315,7 @@
 	"displace_presets": [
 		{
 			"name": "Digital Wave",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"filter_displace_scale_x": 40,
 				"filter_displace_scale_y": 40,
@@ -354,7 +354,7 @@
 		},
 		{
 			"name": "Drunk",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"power": 1,
 				"invert": false,
@@ -392,7 +392,7 @@
 		},
 		{
 			"name": "Edge- Crosshatch",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"filter_displace_scale_y": 150,
 				"filter_displace_scale_x": 150,
@@ -430,7 +430,7 @@
 		},
 		{
 			"name": "Edge- Digital",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -467,7 +467,7 @@
 		},
 		{
 			"name": "Edge- Ice Storm",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"filter_displace_scale_y": 370,
 				"filter_displace_scale_x": 370,
@@ -505,7 +505,7 @@
 		},
 		{
 			"name": "Edge- Liquid",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"billow": false,
 				"ridged": false,
@@ -542,7 +542,7 @@
 		},
 		{
 			"name": "Edge- Plasma",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"power": 1,
 				"invert": false,
@@ -580,7 +580,7 @@
 		},
 		{
 			"name": "Edge- Zap",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"filter_displace_scale_y": 60.7,
 				"filter_displace_scale_x": 23.8,
@@ -618,7 +618,7 @@
 		},
 		{
 			"name": "Mosaic",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"filter_displace_scale_x": 40,
 				"filter_displace_scale_y": 40,
@@ -657,7 +657,7 @@
 		},
 		{
 			"name": "Text- Wiggly",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"filter_displace_scale_x": 2.5,
 				"filter_displace_scale_y": 1,
@@ -695,7 +695,7 @@
 		},
 		{
 			"name": "Text- Wobbly",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"power": 1,
 				"sub_influence": 0.7,
@@ -732,7 +732,7 @@
 		},
 		{
 			"name": "Water",
-			"version": "0.0.2",
+			"version": "1.0.0",
 			"settings": {
 				"layers": 4,
 				"power": 1,
