@@ -37,14 +37,15 @@ endif()
 target_sources(
   ${PROJECT_NAME}
   PRIVATE
-  src/obs-noise-source.c
-	src/obs-noise-plugin.c
-	src/obs-noise-source.h
-	src/obs-noise.h
-	src/obs-utils.c
-	src/obs-utils.h
-	src/dual-kawase.c
-	src/dual-kawase.h
-	src/version.h)
+    src/obs-noise-source.c
+    src/obs-noise-plugin.c
+    src/obs-noise-source.h
+    src/obs-noise.h
+    src/obs-utils.c
+    src/obs-utils.h
+    src/dual-kawase.c
+    src/dual-kawase.h
+    src/version.h
+)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
