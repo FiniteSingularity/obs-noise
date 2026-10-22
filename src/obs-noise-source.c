@@ -85,7 +85,7 @@ static void noise_create(noise_data_t *filter)
 		create_or_reset_texrender(filter->input_texrender);
 	filter->output_texrender =
 		create_or_reset_texrender(filter->output_texrender);
-	
+
 	struct dstr filepath = {0};
 	dstr_cat(&filepath, obs_get_module_data_path(obs_current_module()));
 	dstr_cat(&filepath, "/presets/global_presets.json");
@@ -133,7 +133,7 @@ static void noise_source_destroy(void *data)
 	if (filter->effect_dual_kawase_upsample) {
 		gs_effect_destroy(filter->effect_dual_kawase_upsample);
 	}
-	
+
 	if (filter->effect_dual_kawase_mix) {
 		gs_effect_destroy(filter->effect_dual_kawase_mix);
 	}
@@ -688,7 +688,7 @@ static obs_properties_t *noise_source_properties(void *data)
 
 	if (!filter->is_filter) {
 		obs_properties_t *color_map_group = obs_properties_create();
-		
+
 		obs_properties_add_color_alpha(
 			color_map_group, "map_color_1",
 			obs_module_text("Noise.ColorMap.Color1"));
@@ -1300,7 +1300,7 @@ static void render_noise_gradient(noise_data_t *filter)
 	uint32_t width = filter->width;
 	uint32_t height = filter->height;
 
-	filter->grad_texrender = 
+	filter->grad_texrender =
 		create_or_reset_texrender(filter->grad_texrender);
 
 	if (filter->param_grad_image) {
@@ -1577,7 +1577,7 @@ char *load_noise_shader_from_file(noise_data_t *filter, const char *file_name)
 	struct dstr shader_file;
 	dstr_init(&shader_file);
 	{
-		char *pos = strrchr(file_name, '/');
+		const char *pos = strrchr(file_name, '/');
 		const size_t length = pos - file_name + 1;
 		struct dstr include_path = {0};
 		dstr_ncopy(&include_path, file_name, length);
@@ -1595,7 +1595,7 @@ char *load_noise_shader_from_file(noise_data_t *filter, const char *file_name)
 		line_i++;
 		if (strncmp(line, "#include", 8) == 0) {
 				// Open the included file, place contents here.
-				char *pos = strrchr(file_name, '/');
+				const char *pos = strrchr(file_name, '/');
 				const size_t length = pos - file_name + 1;
 				struct dstr include_path = {0};
 				dstr_ncopy(&include_path, file_name, length);
