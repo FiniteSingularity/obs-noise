@@ -1,7 +1,7 @@
 {
     "display_name": "Noise",
     "id": "d432b6ce-d130-47eb-8d5a-1c887fa24310",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "authors": ["FiniteSingularity"],
     "name": "obs-noise",
     "description": "A animated fractal noise generation and displacement plugin for OBS.",
